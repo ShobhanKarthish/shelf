@@ -1,10 +1,43 @@
 # Shelf
 
-A quiet place for the things you kept. Shelf is a native Kotlin Android app. No WebView, HTML runtime, demo collection, accounts, cloud sync, or social features.
+A quiet place for the things you kept.
 
-## Run
+Shelf is a native Android app for collecting meaningful objects as photo cutouts. Give each object a title, add a story if you like, and arrange your collection on shelves.
 
-Build the debug APK below and install it on Android 9 or later. Subject cutouts require Google Play services. Allow internet access for its first model download; subsequent segmentation works offline. If the model is unavailable or no useful subject is found, the app offers a framed original photo and retry.
+## Features
+
+- Choose a photo with Android’s system photo picker.
+- Remove its background on-device, or keep the original as a framed photo.
+- Add a title and optional story, then save it to a shelf.
+- Revisit your objects and their stories whenever you like.
+
+Photos and metadata stay in app-private storage. No account is required.
+
+## Getting started
+
+### Requirements
+
+- Android 9 (API 28) or later
+- JDK 17
+- Android SDK Platform 35 and Build Tools 35.0.0
+- Google Play services for background removal
+
+The segmentation model needs an internet connection for its initial download. Once available, background removal works offline. Framed photos work when segmentation is unavailable.
+
+### Build
+
+```sh
+git clone https://github.com/ShobhanKarthish/shelf.git
+cd shelf
+```
+
+Open the project in Android Studio, or set `JAVA_HOME` to your JDK 17 installation and create a `local.properties` file with your SDK location:
+
+```properties
+sdk.dir=/absolute/path/to/Android/sdk
+```
+
+Build and install on a connected device or emulator:
 
 ```sh
 ./gradlew assembleDebug
@@ -12,47 +45,39 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.shobhankarthish.shelf/.MainActivity
 ```
 
-On this workspace, `./build-local.sh assembleDebug lintDebug` uses the JDK installed under `../../work/tooling`. To build elsewhere, install JDK 17 and Android SDK platform 35/build-tools 35.0.0, set `JAVA_HOME`, and point `local.properties` at your SDK (`sdk.dir=/your/sdk`). Then run `./gradlew assembleDebug lintDebug`.
+The generated APK is debug-signed for development.
 
-## Working functionality
+## Development
 
-- Three onboarding chapters with centered branding, bundled Cormorant Garamond/Inter, exported olive aura assets, 2.4-second reversing drift, and system animation-disable support.
-- Empty shelf → Android system photo picker → actual ML Kit subject segmentation → transparent-cutout review or framed-photo fallback.
-- Required object title, optional story, and a shelf name. Objects are grouped by shelf in the shelf.
-- PNG images in app-private storage and metadata in SQLite; saving writes the image before committing its metadata. Save failures leave the draft available. Automatic cloud backup and device transfer are excluded.
-- Object labels, dates, object details, cancel confirmation, scrollable forms, photo-picker cancellation, and draft restoration after activity recreation.
+Shelf uses Kotlin, native Android views, SQLite, and ML Kit subject segmentation. Cormorant Garamond and Inter are bundled with the app.
 
-Images are normalized for orientation and limited to a 1600-pixel long edge before segmentation. This preserves a display-quality copy, not the full-resolution camera original. Uninstalling the app or clearing its storage removes your saved objects.
-
-## Verification — 12 September 2026
-
-Verified on an Android 15 / API 35 ARM64 Google Play emulator, at 412×915 dp and a smaller 360×640 dp layout with enlarged text. This is emulator evidence, not a physical-device test or a Play Store release.
-
-- `assembleDebug`, `assembleDebugAndroidTest`, and `lintDebug` pass. Lint has no errors; remaining warnings are SDK modernization/performance suggestions.
-- Real subject segmentation produced `evidence/real-model-cutout.png` from the Figma shell reference. It was not a precomputed cutout supplied by the app.
-- The fresh-model download failure was observed in the app; retry subsequently produced a real cutout.
-- Both device tests passed with emulator Wi-Fi and mobile data disabled after the model download. They check real inference, invalid masks, transparent cropping, title validation, SQLite reopen, image existence, and framed-photo metadata.
-- Through the actual UI: completed onboarding, selected a photo with the system picker, reviewed a cutout, entered title/story, saved, force-stopped/relaunched, and reopened the same title/story/image.
-- Also saved a framed photo with no story and reopened it after force-stop. Checked blank-title validation, form scrolling with enlarged text, hardware back, and cancel confirmation.
-- Captured changing animation frames while enabled and visually inspected the static reduced-motion screen.
-
-Run the device checks on a connected emulator/device with a ready segmentation model:
+Run lint:
 
 ```sh
-./build-local.sh assembleDebug assembleDebugAndroidTest
+./gradlew lintDebug
+```
+
+Run the instrumentation tests on a connected device or emulator with Google Play services:
+
+```sh
+./gradlew assembleDebug assembleDebugAndroidTest
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w com.shobhankarthish.shelf.test/android.test.InstrumentationTestRunner
 ```
 
-On a fresh device the model test can fail while the model downloads. Retry after the download; a failed model test must not be reported as a pass. Test fixtures only exist in the test APK; the shipped app starts empty. No milestone functionality is mocked.
+The segmentation test uses the real model. On a fresh device, allow the model download to finish before retrying the test. Other checks cover transparent cropping, input validation, and local persistence.
 
-## Design and limits
+## Current limitations
 
-Live Figma screens inspected before implementation: A00, A01, A02, A03, A06 and B01, plus screen inventory and onboarding motion data. Source: https://www.figma.com/design/zsXGR0YEvo1T06az52M8AO?node-id=2-29 . The accepted browser reference was read only; the original design workspace was not changed.
+Shelf is in early development. Editing and deleting saved objects, camera capture, and export are not available yet. Collections are intended to be small.
 
-The native system photo picker replaces the Figma mock photo library. System status/navigation bars are real Android UI. Shelf names group objects directly; collection management, editing/deleting saved objects, camera capture, and export are outside this first milestone. The eager grid is intended for a small collection; hundreds of objects need a recycled thumbnail list.
+Imported images are scaled to a maximum long edge of 1600 pixels. Uninstalling Shelf or clearing its storage removes saved objects; there is no backup or sync.
 
-Segmentation quality is model-dependent and was verified with one shell reference, not a broad real-world photo corpus. Google currently supplies this segmentation SDK in beta: https://developers.google.com/ml-kit/vision/subject-segmentation/android . First-use download needs connectivity; devices without Google Play services can use framed photos.
+## Contributing
 
-The APK is debug-signed for development. Fonts are bundled under the SIL Open Font License; see `licenses/`. App imagery and aura assets come from the supplied Figma/reference design.
+Bug reports and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+## Fonts
+
+Cormorant Garamond and Inter use the SIL Open Font License. Their license notices are included in [licenses/](licenses/).
