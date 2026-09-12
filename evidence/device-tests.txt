@@ -1,0 +1,9 @@
+
+com.shobhankarthish.shelf.ModelTest:.
+com.shobhankarthish.shelf.ShelfTest:.
+Test results for InstrumentationTestRunner=..
+Time: 1.51
+
+OK (2 tests)
+
+
