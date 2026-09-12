@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ <application android:label="Shelf" android:icon="@drawable/mark" android:dataExtractionRules="@xml/data_extraction_rules" android:theme="@style/AppTheme" android:allowBackup="false" android:fullBackupContent="false" android:supportsRtl="true">
+  <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="subject_segment" />
+  <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize" android:enableOnBackInvokedCallback="false">
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity>
+ </application>
+</manifest>
