@@ -33,8 +33,9 @@ class MainActivity : Activity() {
     private lateinit var body: LinearLayout
     private lateinit var store: ShelfStore
     private val worker = Executors.newSingleThreadExecutor()
-    private val segmenter by lazy { SubjectSegmentation.getClient(SubjectSegmenterOptions.Builder().enableForegroundBitmap().build()) }
+    private val segmenter by lazy { SubjectSegmentation.getClient(SubjectSegmenterOptions.Builder().enableMultipleSubjects(SubjectSegmenterOptions.SubjectResultOptions.Builder().enableSubjectBitmap().build()).build()) }
     private var motion: ObjectAnimator? = null
+    private var selectionView: SubjectSelectionView? = null
     private var page = "shelf"
     private var step = 0
     private var original: Bitmap? = null
@@ -63,25 +64,27 @@ class MainActivity : Activity() {
         draftShelf = state?.getString("shelf") ?: "My first shelf"
         framed = state?.getBoolean("framed") ?: false
         original = BitmapFactory.decodeFile(File(cacheDir,"draft.png").path)
-        cutout = BitmapFactory.decodeFile(File(cacheDir,"cutout.png").path)
+        cutout = if(state?.getBoolean("cutoutReady")==true) BitmapFactory.decodeFile(File(cacheDir,"cutout.png").path) else null
         page = state?.getString("page") ?: if (prefs.getBoolean("onboarded",false)) "shelf" else "onboarding"
         selected = state?.getString("selected")?.let { id -> store.all().find { it.id == id } }
         when {
             page == "onboarding" -> onboarding()
             page == "details" && selected != null -> details(selected!!)
             page == "form" && original != null -> form()
-            (page == "review" || page == "processing") && original != null -> if (cutout != null || framed) review() else process()
+            (page == "review" || page == "revealing") && original != null -> if (cutout != null || framed) review() else process()
+            page == "processing" && original != null -> process()
             else -> shelf()
         }
     }
     private fun rememberFields() { titleField?.let { draftTitle=it.text.toString() }; storyField?.let { draftStory=it.text.toString() }; shelfField?.let { draftShelf=it.text.toString() } }
     override fun onSaveInstanceState(out: Bundle) {
         rememberFields()
+        out.putBoolean("cutoutReady",cutout!=null)
         out.putString("page",page); out.putInt("step",step); out.putString("title",draftTitle); out.putString("story",draftStory); out.putString("shelf",draftShelf); out.putBoolean("framed",framed); out.putString("selected",selected?.id)
         super.onSaveInstanceState(out)
     }
     private fun screen(name: String) {
-        motion?.cancel(); page=name; titleField=null; storyField=null; shelfField=null
+        motion?.cancel(); selectionView?.dispose(); selectionView=null; page=name; titleField=null; storyField=null; shelfField=null
         root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setBackgroundColor(cream); setPadding(dp(24),dp(20),dp(24),dp(16)) }
         root.setOnApplyWindowInsetsListener { v, insets ->
             v.setPadding(dp(24),insets.systemWindowInsetTop+dp(20),dp(24),insets.systemWindowInsetBottom+dp(16)); insets
@@ -119,7 +122,7 @@ class MainActivity : Activity() {
     }
     private fun leave() {
         if(saving) return
-        if(page in listOf("form","review","processing")) AlertDialog.Builder(this).setMessage("Leave this object without saving?").setNegativeButton("Keep working",null).setPositiveButton("Leave") { _,_-> generation++; clearDraft(); shelf() }.show()
+        if(page in listOf("form","review","processing","revealing")) AlertDialog.Builder(this).setMessage("Leave this object without saving?").setNegativeButton("Keep working",null).setPositiveButton("Leave") { _,_-> generation++; clearDraft(); shelf() }.show()
         else shelf()
     }
     @Deprecated("Android back compatibility") override fun onBackPressed() { if(page=="shelf") super.onBackPressed() else if(page=="onboarding" && step>0) { step--; onboarding() } else leave() }
@@ -198,19 +201,98 @@ class MainActivity : Activity() {
     }
     private fun process() {
         val b=original ?: return
-        screen("processing"); back(); body.addView(text("Finding your object.",34,true)); gap(40); body.addView(photo(b,false,240)); body.addView(text("A little less background.",28,true,true)); body.addView(text("Preparing your keepsake. The first cutout may need a model download.",14,center=true))
-        footer("Keep a framed photo instead") { generation++; framed=true; review() }
+        cutout=null; framed=false
+        screen("processing"); back()
+        val heading=text("What would you like to keep?",34,true)
+        body.addView(heading)
+        val hint=text("Finding the objects in your photo…",14)
+        body.addView(hint)
+        val stage=SubjectSelectionView(this,b).apply { layoutParams=LinearLayout.LayoutParams(-1,dp(340)) }
+        selectionView=stage; body.addView(stage)
+        val status=text("Your photo stays whole until you choose.",14,center=true)
+        body.addView(status)
+        val choices=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+        body.addView(choices)
+        val keep=button("Keep this") {}.apply { isEnabled=false; alpha=.45f }
+        root.addView(keep)
+        root.addView(button("Keep a framed photo instead",false) { generation++; framed=true; review() })
         val token=++generation
-        val timeout=Runnable { if(token==generation && page=="processing") { generation++; framed=true; review("The cutout is taking too long. You can keep the photo or retry.") } }
-        root.postDelayed(timeout,45000)
-        segmenter.process(InputImage.fromBitmap(b,0)).addOnSuccessListener { result ->
-            if (isDestroyed || token != generation) return@addOnSuccessListener
-            worker.execute {
-                val subject=try { result.foregroundBitmap?.let { cropSubject(it) } } catch(e:Exception) { null }
-                try { if(subject!=null) File(cacheDir,"cutout.png").outputStream().use { check(subject.compress(Bitmap.CompressFormat.PNG,100,it)) } } catch(e:Exception) { /* The save step still owns the bitmap and reports write errors. */ }
-                runOnUiThread { if(token==generation && !isDestroyed) { root.removeCallbacks(timeout); cutout=subject; framed=subject==null; review() } }
+        val timeout=Runnable {
+            if(token==generation && page=="processing") {
+                generation++; framed=true; review("Finding objects is taking too long. Keep the photo or retry.")
             }
-        }.addOnFailureListener { if(token==generation && !isDestroyed) { root.removeCallbacks(timeout); framed=true; review() } }
+        }
+        val host=root
+        host.postDelayed(timeout,45000)
+        stage.onSelection={ index ->
+            keep.isEnabled=index!=null; keep.alpha=if(index==null) .45f else 1f
+            status.text=if(index==null) "No object here. Try holding another part of the photo." else "Object ${index+1} selected. Keep it, or hold another object."
+            for(i in 0 until choices.childCount) choices.getChildAt(i).isSelected=i==index
+            stage.announceForAccessibility(status.text)
+        }
+        keep.setOnClickListener {
+            if(page=="review") { form(); return@setOnClickListener }
+            val index=stage.selectedIndex ?: return@setOnClickListener
+            if(page!="processing") return@setOnClickListener
+            stage.lockSelection()
+            page="revealing"; keep.isEnabled=false; keep.alpha=.45f
+            choices.visibility=View.GONE
+            heading.minHeight=heading.height; hint.minHeight=hint.height
+            heading.text="Letting go."
+            hint.text="A little less background."
+            status.text="Preparing your chosen object…"
+            val subject=stage.subjects[index]
+            worker.execute {
+                try {
+                    val chosen=subject.export()
+                    val file=android.util.AtomicFile(File(cacheDir,"cutout.png"))
+                    val stream=file.startWrite()
+                    try { check(chosen.compress(Bitmap.CompressFormat.PNG,100,stream)); file.finishWrite(stream) }
+                    catch(e:Exception) { file.failWrite(stream); throw e }
+                    runOnUiThread {
+                        if(token!=generation || isDestroyed) return@runOnUiThread
+                        cutout=chosen
+                        status.text="And slowly, let go."
+                        stage.reveal {
+                            if(token==generation && !isDestroyed) {
+                                page="review"; heading.text="Just the little thing."; status.text="Ready for your shelf."
+                                hint.text="Just the little thing."
+                                keep.text="Use this cutout"; keep.isEnabled=true; keep.alpha=1f
+                                root.addView(button("Choose a different object",false) { process() })
+                            }
+                        }
+                    }
+                } catch(e:Exception) {
+                    runOnUiThread { if(token==generation && !isDestroyed) { process(); error("Couldn’t prepare that cutout. Please try again; your original photo is still here.") } }
+                }
+            }
+        }
+        segmenter.process(InputImage.fromBitmap(b,0)).addOnSuccessListener { result ->
+            if(isDestroyed || token!=generation) return@addOnSuccessListener
+            host.removeCallbacks(timeout)
+            val subjects=result.subjects.mapNotNull { subject ->
+                subject.bitmap?.takeIf { subject.startX>=0 && subject.startY>=0 &&
+                    subject.startX+it.width<=b.width && subject.startY+it.height<=b.height }?.let {
+                    PhotoSubject(it,subject.startX,subject.startY)
+                }
+            }
+            if(subjects.isEmpty()) { framed=true; review("We couldn’t find a separate object here. Keep the photo, or try again."); return@addOnSuccessListener }
+            stage.subjects=subjects
+            hint.text="Press and hold the object you want to keep."
+            status.text="Or select an object below."
+            subjects.forEachIndexed { index,subject ->
+                choices.addView(button("Select object ${index+1}",false) { stage.select(index) }.apply {
+                    val thumbnail=android.graphics.drawable.BitmapDrawable(resources,subject.bitmap)
+                    thumbnail.setBounds(0,0,dp(44),dp(44)); setCompoundDrawables(thumbnail,null,null,null)
+                    contentDescription="Select object ${index+1}, shown in the preview"
+                })
+            }
+        }.addOnFailureListener {
+            if(token==generation && !isDestroyed) {
+                host.removeCallbacks(timeout); framed=true
+                review("Objects couldn’t be detected yet. Keep the photo, or retry once the model is ready.")
+            }
+        }
     }
     @android.annotation.SuppressLint("AppCompatCustomView") // Native Activity/theme; no AppCompat tinting is used.
     private fun photo(bitmap:Bitmap?, frame:Boolean, height:Int): View {
@@ -233,7 +315,10 @@ class MainActivity : Activity() {
         screen("review"); back(); body.addView(text(if(framed) "Still worth keeping." else "Just the little thing.",34,true)); gap(40)
         body.addView(photo(if(framed)original else cutout,framed,260)); body.addView(text(if(framed) "A photo works beautifully." else "Ready for your shelf.",28,true,true))
         if(framed) { body.addView(text(message.ifEmpty { "We couldn’t separate this object. Keep the full photo, or try again once the model is ready." },14,center=true)); body.addView(button("Retry background removal",false) { framed=false; process() }) }
-        else body.addView(button("Keep original photo instead",false) { framed=true; review("Your original photo, ready to keep.") })
+        else {
+            body.addView(button("Choose a different object",false) { process() })
+            body.addView(button("Keep original photo instead",false) { framed=true; review("Your original photo, ready to keep.") })
+        }
         body.addView(button("Choose another photo",false) { pick() })
         footer(if(framed) "Use this photo" else "Use this cutout","Next, give your object a name.") { form() }
     }
@@ -273,7 +358,7 @@ class MainActivity : Activity() {
         root.addView(text("Kept in ${item.shelf}",11)); root.addView(text("Some things are worth holding on to.",18,true))
     }
     private fun error(message:String) { AlertDialog.Builder(this).setMessage(message).setPositiveButton("OK",null).show() }
-    override fun onStop() { motion?.pause(); super.onStop() }
-    override fun onStart() { super.onStart(); motion?.resume() }
-    override fun onDestroy() { generation++; motion?.cancel(); worker.shutdown(); segmenter.close(); super.onDestroy() }
+    override fun onStop() { selectionView?.pause(); motion?.pause(); super.onStop() }
+    override fun onStart() { super.onStart(); selectionView?.resume(); motion?.resume() }
+    override fun onDestroy() { generation++; selectionView?.dispose(); motion?.cancel(); worker.shutdown(); segmenter.close(); super.onDestroy() }
 }

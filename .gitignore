@@ -5,3 +5,10 @@ local.properties
 .DS_Store
 *.apk
 *.aab
+
+# Private Android signing material
+*.jks
+*.keystore
+*.p12
+*signing.properties
+keystore.properties

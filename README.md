@@ -7,7 +7,8 @@ Shelf is a native Android app for collecting meaningful objects as photo cutouts
 ## Features
 
 - Choose a photo with Android’s system photo picker.
-- Remove its background on-device, or keep the original as a framed photo.
+- Press and hold an object to select it, then confirm with **Keep this**. Object buttons also support accessible selection.
+- Watch a gentle three-second reveal, or keep the original as a framed photo. Background removal runs on-device.
 - Add a title and optional story, then save it to a shelf.
 - Revisit your objects and their stories whenever you like.
 
@@ -22,7 +23,7 @@ Photos and metadata stay in app-private storage. No account is required.
 - Android SDK Platform 35 and Build Tools 35.0.0
 - Google Play services for background removal
 
-The segmentation model needs an internet connection for its initial download. Once available, background removal works offline. Framed photos work when segmentation is unavailable.
+The segmentation model needs an internet connection for its initial download. Once available, background removal works offline. Framed photos work when segmentation is unavailable. Selection is limited to subjects the model detects separately; touching or overlapping objects can be grouped together.
 
 ### Build
 
@@ -46,6 +47,33 @@ adb shell am start -n com.shobhankarthish.shelf/.MainActivity
 ```
 
 The generated APK is debug-signed for development.
+
+## Releases
+
+Download versioned APKs from [GitHub Releases](https://github.com/ShobhanKarthish/shelf/releases).
+The standard APK is a non-debuggable release signed with Shelf's release key.
+Version `0.2.0` uses Android version code `2`; increase the version code for every new release.
+
+To build a signed release, keep your keystore and signing properties outside the repository:
+
+```properties
+storeFile=/absolute/path/to/release.jks
+storePassword=your-keystore-password
+keyAlias=shelf-release
+keyPassword=your-key-password
+```
+
+```sh
+SHELF_SIGNING_PROPERTIES=/absolute/path/to/release-signing.properties ./gradlew assembleRelease
+```
+
+Signing credentials are required for release builds. Back up the keystore and credentials securely;
+future updates must use the same signing key. Never commit them.
+
+The release APK cannot update an earlier debug-signed installation. The separately labelled
+`debug-upgrade` APK in v0.2.0 updates the earlier development build while retaining its local data.
+Do not uninstall an existing installation containing keepsakes you want to retain: Shelf has no export yet.
+Subsequent release-signed builds can update the release app normally.
 
 ## Development
 

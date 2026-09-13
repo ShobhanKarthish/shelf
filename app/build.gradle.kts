@@ -1,4 +1,10 @@
+import java.util.Properties
+
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
+val releaseSigning = Properties().apply {
+    val path = System.getenv("SHELF_SIGNING_PROPERTIES")
+    if (path != null) file(path).inputStream().use { load(it) }
+}
 android {
     namespace = "com.shobhankarthish.shelf"
     compileSdk = 35
@@ -6,9 +12,23 @@ android {
         applicationId = "com.shobhankarthish.shelf"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+    }
+    signingConfigs {
+        create("release") {
+            storeFile = releaseSigning.getProperty("storeFile")?.let { file(it) }
+            storePassword = releaseSigning.getProperty("storePassword")
+            keyAlias = releaseSigning.getProperty("keyAlias")
+            keyPassword = releaseSigning.getProperty("keyPassword")
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
