@@ -15,6 +15,7 @@ android {
         versionCode = 2
         versionName = "0.2.0"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+        manifestPlaceholders["appLabel"] = "Shelf"
     }
     signingConfigs {
         create("release") {
@@ -27,7 +28,19 @@ android {
     buildTypes {
         getByName("release") {
             isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = signingConfigs.getByName("release")
+        }
+        // Release speed without the release key: installs next to Shelf as "Shelf Preview", for trying builds on a phone.
+        create("preview") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            manifestPlaceholders["appLabel"] = "Shelf Preview"
+            matchingFallbacks += listOf("release")
         }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
