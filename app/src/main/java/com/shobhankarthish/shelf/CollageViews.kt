@@ -1,0 +1,151 @@
+package com.shobhankarthish.shelf
+
+import android.animation.ValueAnimator
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.*
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.StateListDrawable
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.widget.Button
+import android.widget.LinearLayout
+import kotlin.math.*
+
+fun pill(color: Int, radius: Float, stroke: Int=0, strokeWidth: Float=0f)=GradientDrawable().apply {
+    setColor(color); cornerRadius=radius; if(strokeWidth>0f) setStroke(strokeWidth.roundToInt(),stroke)
+}
+fun ripple(radius: Float)=RippleDrawable(ColorStateList.valueOf(Ink.alpha(Ink.INK,.08f)),null,pill(Color.WHITE,radius))
+
+/** A small interface mark drawn in ink, for icons inside buttons. */
+class DoodleDrawable(private val doodle: Doodle, color: Int, strokeDp: Float, private val size: Int) : Drawable() {
+    private val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=strokeDp*density; this.color=color; strokeCap=Paint.Cap.ROUND; strokeJoin=Paint.Join.ROUND }
+    private var path=Path()
+    init { setBounds(0,0,size,size) }
+    override fun onBoundsChange(b: Rect) { path=doodlePath(doodle,RectF(b)) }
+    override fun draw(canvas: Canvas) { canvas.drawPath(path,paint) }
+    override fun getIntrinsicWidth()=size
+    override fun getIntrinsicHeight()=size
+    override fun setAlpha(alpha: Int) { paint.alpha=alpha }
+    override fun setColorFilter(filter: ColorFilter?) { paint.colorFilter=filter }
+    @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.TRANSLUCENT
+}
+
+/** The one button that moves you forward on each screen: a dark pill, easy to find and easy to hit. */
+@SuppressLint("AppCompatCustomView") // Native Activity/theme; no AppCompat tinting is used.
+class PrimaryButton(context: Context, label: String, icon: Doodle?=null) : Button(context) {
+    init {
+        val d=resources.displayMetrics.density; val r=28*d
+        text=label; isAllCaps=false; typeface=Fonts.of(context).medium; setTextSize(TypedValue.COMPLEX_UNIT_SP,16f)
+        setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled),intArrayOf()),intArrayOf(Ink.INK_3,Ink.PAPER)))
+        val shape=StateListDrawable().apply { addState(intArrayOf(-android.R.attr.state_enabled),pill(Ink.LINE,r)); addState(intArrayOf(),pill(Ink.INK,r)) }
+        background=RippleDrawable(ColorStateList.valueOf(Ink.alpha(Color.WHITE,.2f)),shape,null)
+        stateListAnimator=null; gravity=Gravity.CENTER; minWidth=0; minimumWidth=0; minHeight=(56*d).roundToInt(); minimumHeight=minHeight
+        setPadding((28*d).roundToInt(),0,(28*d).roundToInt(),0)
+        if(icon!=null) { setCompoundDrawablesRelative(DoodleDrawable(icon,Ink.PAPER,2.2f,(20*d).roundToInt()),null,null,null); compoundDrawablePadding=(8*d).roundToInt() }
+    }
+}
+
+/** Other choices: plain words, still a comfortable 48dp to tap. */
+@SuppressLint("AppCompatCustomView")
+class QuietButton(context: Context, label: String, icon: Doodle?=null) : Button(context) {
+    init {
+        val d=resources.displayMetrics.density
+        text=label; isAllCaps=false; typeface=Fonts.of(context).medium; setTextSize(TypedValue.COMPLEX_UNIT_SP,15f); setTextColor(Ink.INK)
+        background=ripple(24*d); stateListAnimator=null; gravity=Gravity.CENTER
+        minWidth=0; minimumWidth=0; minHeight=(48*d).roundToInt(); minimumHeight=minHeight; setPadding((16*d).roundToInt(),0,(16*d).roundToInt(),0)
+        if(icon!=null) { setCompoundDrawablesRelative(DoodleDrawable(icon,Ink.INK,2f,(22*d).roundToInt()),null,null,null); compoundDrawablePadding=(6*d).roundToInt() }
+    }
+}
+
+/** An icon-only button, such as close. */
+@SuppressLint("AppCompatCustomView")
+class IconButton(context: Context, doodle: Doodle, label: String) : Button(context) {
+    private val icon=DoodleDrawable(doodle,Ink.INK,2f,(24*resources.displayMetrics.density).roundToInt())
+    init { text=""; contentDescription=label; background=ripple(24*resources.displayMetrics.density); stateListAnimator=null; minWidth=0; minimumWidth=0; minHeight=0; minimumHeight=0; setPadding(0,0,0,0) }
+    override fun onDraw(canvas: Canvas) {
+        canvas.save(); canvas.translate((width-icon.intrinsicWidth)/2f,(height-icon.intrinsicHeight)/2f); icon.draw(canvas); canvas.restore()
+    }
+}
+
+/** A sticker or print. [bottom] stands it on a shelf line instead of centring it; a new bitmap fades in. */
+class StickerView(context: Context, private val angle: Float=0f, private val bottom: Boolean=true) : View(context) {
+    private val d=resources.displayMetrics.density
+    private val image=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val shade=Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter=PorterDuffColorFilter(Ink.INK,PorterDuff.Mode.SRC_IN) }
+    private var bitmap: Bitmap?=null
+    init { importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
+    fun show(b: Bitmap?, fade: Boolean) {
+        bitmap=b; invalidate()
+        if(b!=null && fade && ValueAnimator.areAnimatorsEnabled()) { alpha=0f; animate().alpha(1f).setDuration(160).start() }
+    }
+    override fun onDraw(canvas: Canvas) {
+        val b=bitmap ?: return
+        val m=4*d; val s=min((width-2*m)/b.width,(height-2*m)/b.height)
+        val w=b.width*s; val h=b.height*s; val left=(width-w)/2; val top=if(bottom) height-h-m else (height-h)/2
+        val dst=RectF(left,top,left+w,top+h)
+        canvas.save(); canvas.rotate(angle,dst.centerX(),if(bottom) dst.bottom else dst.centerY())
+        shade.alpha=18; canvas.save(); canvas.translate(0f,3*d); canvas.drawBitmap(b,null,dst,shade); canvas.restore()
+        canvas.drawBitmap(b,null,dst,image); canvas.restore()
+    }
+}
+
+/** One shelf: a hand-drawn pencil line. Things stand on it; their names sit underneath. */
+class ShelfRow(context: Context, private val seed: Int, private val lineAt: Float) : LinearLayout(context) {
+    private val d=resources.displayMetrics.density
+    private val pencil=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=1.8f*d; color=Ink.alpha(Ink.INK,.75f); strokeCap=Paint.Cap.ROUND }
+    private var line=Path()
+    init { orientation=HORIZONTAL; setWillNotDraw(false); clipChildren=false; clipToPadding=false }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { line=wobblyLine(2*d,w-2*d,lineAt*d,seed,.9f*d) }
+    override fun onDraw(canvas: Canvas) { canvas.drawPath(line,pencil) }
+}
+
+/** An empty dashed place on the shelf, waiting for the first thing. */
+class SlotView(context: Context) : View(context) {
+    private val d=resources.displayMetrics.density
+    private val dash=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=1.8f*d; color=Ink.INK_3; pathEffect=DashPathEffect(floatArrayOf(6*d,6*d),0f) }
+    private val plus=DoodleDrawable(Doodle.PLUS,Ink.INK_3,2f,(28*d).roundToInt())
+    private var box=Path()
+    init { importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { box=sketchBox(RectF(2*d,2*d,w-2*d,h-2*d),14*d,7) }
+    override fun onDraw(canvas: Canvas) {
+        canvas.drawPath(box,dash)
+        canvas.save(); canvas.translate((width-plus.intrinsicWidth)/2f,(height-plus.intrinsicHeight)/2f); plus.draw(canvas); canvas.restore()
+    }
+}
+
+/** A round button holding one object found in the photo. */
+@SuppressLint("AppCompatCustomView")
+class ChipButton(context: Context, number: Int, private val thumb: Bitmap) : Button(context) {
+    private val d=resources.displayMetrics.density
+    private val fill=Paint(Paint.ANTI_ALIAS_FLAG)
+    private val image=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val ring=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=2.5f*d; color=Ink.ACCENT }
+    init { text=""; contentDescription="Select object $number"; background=null; stateListAnimator=null; minWidth=0; minimumWidth=0; minHeight=0; minimumHeight=0; setPadding(0,0,0,0) }
+    override fun setSelected(selected: Boolean) { super.setSelected(selected); invalidate() }
+    override fun onDraw(canvas: Canvas) {
+        val cx=width/2f; val cy=height/2f; val r=28*d
+        fill.color=Ink.alpha(Ink.INK,.07f); canvas.drawCircle(cx,cy+2*d,r,fill)
+        fill.color=Ink.SURFACE; canvas.drawCircle(cx,cy,r,fill)
+        val s=min(40*d/thumb.width,40*d/thumb.height); val w=thumb.width*s; val h=thumb.height*s
+        canvas.drawBitmap(thumb,null,RectF(cx-w/2,cy-h/2,cx+w/2,cy+h/2),image)
+        if(isSelected) canvas.drawCircle(cx,cy,r+4*d,ring)
+    }
+}
+
+/** A hairline that fills as work finishes. */
+class ProgressLine(context: Context) : View(context) {
+    private val d=resources.displayMetrics.density
+    private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+    var progress=0f
+        set(value) { field=value.coerceIn(0f,1f); invalidate() }
+    override fun onDraw(canvas: Canvas) {
+        val y=height/2f; val h=1.5f*d
+        paint.color=Ink.LINE; canvas.drawRoundRect(0f,y-h,width.toFloat(),y+h,h,h,paint)
+        paint.color=Ink.INK; canvas.drawRoundRect(0f,y-h,width*progress,y+h,h,h,paint)
+    }
+}
