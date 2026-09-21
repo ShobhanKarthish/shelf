@@ -253,7 +253,7 @@ class MainActivity : Activity() {
                         if(token!=generation || isDestroyed) return@runOnUiThread
                         cutout=chosen
                         status.text="And slowly, let go."
-                        stage.reveal {
+                        stage.snip {
                             if(token==generation && !isDestroyed) {
                                 page="review"; heading.text="Just the little thing."; status.text="Ready for your shelf."
                                 hint.text="Just the little thing."
