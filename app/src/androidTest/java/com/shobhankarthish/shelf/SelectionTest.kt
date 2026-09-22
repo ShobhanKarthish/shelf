@@ -49,25 +49,32 @@ class SelectionTest : InstrumentationTestCase() {
             val stage=SubjectSelectionView(instrumentation.targetContext,image)
             stage.layout(0,0,400,400)
             stage.subjects=listOf(PhotoSubject(first,10,10),PhotoSubject(second,150,60))
-            val pad=12*instrumentation.targetContext.resources.displayMetrics.density
-            val scale=(400-2*pad)/200
-            fun x(n: Float)=pad+n*scale
-            fun y(n: Float)=(400-100*scale)/2+n*scale
+            fun at(x: Float, y: Float)=stage.photoToView(x,y).let { stage.subjectAt(it.x,it.y) }
             assertNull(stage.selectedIndex)
-            assertEquals(0,stage.subjectAt(x(20f),y(20f)))
-            assertNull(stage.subjectAt(x(25.1f),y(25.1f))) // The handle hole is not part of the object.
-            assertEquals(1,stage.subjectAt(x(155f),y(65f)))
-            assertNull(stage.subjectAt(0f,0f)) // Letterbox padding is not photo content.
+            assertEquals(0,at(20f,20f))
+            assertEquals(0,at(25.1f,25.1f)) // A hole inside the cut line still picks its object.
+            assertEquals(1,at(155f,65f))
+            assertNull(at(100f,90f)) // Plain photo between objects picks nothing.
+            assertNull(stage.subjectAt(0f,0f)) // The margin around the print is not photo content.
             stage.select(1); assertEquals(1,stage.selectedIndex)
             val exported=stage.subjects[1].export()
             assertEquals(Color.BLUE,exported.getPixel(15,15))
             assertEquals(Color.TRANSPARENT,exported.getPixel(0,0))
+            val sticker=stage.sticker(1)
+            assertEquals(Color.BLUE,sticker.bitmap.getPixel((10-sticker.left).toInt(),(10-sticker.top).toInt())) // Sticker offsets are in the object's own pixels.
             stage.lockSelection(); stage.select(0); assertEquals(1,stage.selectedIndex)
             stage.dispose()
         }
     }
 
-    fun testRealModelRequiresLongPressThenKeepAndPersistsOnlySelection() {
+    private fun touch(stage: View, x: Float, y: Float, hold: Long) {
+        val down=SystemClock.uptimeMillis()
+        ui { stage.dispatchTouchEvent(MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,x,y,0)) }
+        Thread.sleep(hold)
+        ui { stage.dispatchTouchEvent(MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,x,y,0)) }
+    }
+
+    fun testRealModelTapThenSnipAndPersistsOnlySelection() {
         val context=instrumentation.targetContext
         val draft=File(context.cacheDir,"draft.png"); val cutout=File(context.cacheDir,"cutout.png")
         val oldDraft=if(draft.exists())draft.readBytes() else null
@@ -84,37 +91,40 @@ class SelectionTest : InstrumentationTestCase() {
             lateinit var stage: SubjectSelectionView
             ui {
                 stage=field(activity,"selectionView") as SubjectSelectionView
-                assertNull(stage.selectedIndex)
                 assertNull(field(activity,"cutout"))
-                assertFalse(button(activity,"Keep this").isEnabled)
                 assertEquals("processing",field(activity,"page"))
+                // A single object is chosen for you; with several, nothing is until you tap one.
+                if(stage.subjects.size==1) { assertEquals(0,stage.selectedIndex); assertTrue(button(activity,"Snip it out").isEnabled) }
+                else { assertNull(stage.selectedIndex); assertFalse(button(activity,"Snip it out").isEnabled) }
             }
             screenshot("selection-photo.png")
-            // Exercise the actual gesture recognizer, not the direct selection helper.
+            var before: Int?=null
+            ui { before=stage.selectedIndex }
+            touch(stage,2f,2f,50) // Outside the print: nothing changes.
+            ui { assertEquals(before,stage.selectedIndex) }
+            // Exercise the actual gesture recognizer with a plain tap on the object's pixels.
             val subject=stage.subjects.first()
             var px=0; var py=0
             search@ for(y in 0 until subject.bitmap.height) for(x in 0 until subject.bitmap.width) {
                 if(Color.alpha(subject.bitmap.getPixel(x,y))>240) { px=x; py=y; break@search }
             }
-            val density=context.resources.displayMetrics.density
-            val scale=minOf((stage.width-24*density)/image.width,(stage.height-24*density)/image.height)
-            val x=(stage.width-image.width*scale)/2+(subject.left+px+.5f)*scale
-            val y=(stage.height-image.height*scale)/2+(subject.top+py+.5f)*scale
-            val down=SystemClock.uptimeMillis()
-            ui { stage.dispatchTouchEvent(MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,x,y,0)) }
-            Thread.sleep(ViewConfiguration.getLongPressTimeout().toLong()+200)
-            ui { stage.dispatchTouchEvent(MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,x,y,0)); assertNotNull(stage.selectedIndex); assertTrue(button(activity,"Keep this").isEnabled) }
+            lateinit var point: android.graphics.PointF
+            ui { point=stage.photoToView(subject.left+px+.5f,subject.top+py+.5f) }
+            touch(stage,point.x,point.y,40)
+            ui { assertEquals(0,stage.selectedIndex); assertTrue(button(activity,"Snip it out").isEnabled) }
+            touch(stage,point.x,point.y,ViewConfiguration.getLongPressTimeout().toLong()+200) // Holding still works.
+            ui { assertEquals(0,stage.selectedIndex) }
             screenshot("selection-highlight.png")
-            ui { button(activity,"Keep this").performClick(); stage.pause() }
+            ui { button(activity,"Snip it out").performClick(); stage.pause() }
             if(ValueAnimator.areAnimatorsEnabled()) {
-                Thread.sleep(3300)
+                Thread.sleep(3800)
                 ui { assertEquals("revealing",field(activity,"page")) }
             }
             ui { stage.resume() }
-            if(ValueAnimator.areAnimatorsEnabled()) { Thread.sleep(1500); screenshot("selection-reveal.png") }
-            awaitCondition("Reveal did not reach review") { field(activity,"page")=="review" }
+            if(ValueAnimator.areAnimatorsEnabled()) { Thread.sleep(1200); screenshot("selection-snip.png") }
+            awaitCondition("Snip did not reach review") { field(activity,"page")=="review" }
             ui {
-                assertTrue(button(activity,"Use this cutout").isEnabled)
+                assertTrue(button(activity,"Use this sticker").isEnabled)
                 val chosen=field(activity,"cutout") as Bitmap
                 assertEquals(subject.bitmap.width+24,chosen.width)
                 assertEquals(subject.bitmap.height+24,chosen.height)
@@ -131,10 +141,14 @@ class SelectionTest : InstrumentationTestCase() {
             assertNotNull("Draft activity did not recreate",restored)
             activity=restored as MainActivity
             instrumentation.waitForIdleSync()
-            ui { assertEquals("review",field(activity,"page")); assertEquals(stored.width,(field(activity,"cutout") as Bitmap).width) }
+            ui { assertEquals("review",field(activity,"page")); assertEquals(stored.width,(field(activity,"cutout") as Bitmap).width); assertTrue(button(activity,"Use this sticker").isEnabled) }
             ui { button(activity,"Choose a different object").performClick() }
             awaitCondition("Could not reselect") { (field(activity,"selectionView") as? SubjectSelectionView)?.subjects?.isNotEmpty()==true }
-            ui { assertNull((field(activity,"selectionView") as SubjectSelectionView).selectedIndex); assertFalse(button(activity,"Keep this").isEnabled) }
+            ui {
+                val again=field(activity,"selectionView") as SubjectSelectionView
+                if(again.subjects.size==1) assertEquals(0,again.selectedIndex) else assertNull(again.selectedIndex)
+                assertEquals(again.selectedIndex!=null,button(activity,"Snip it out").isEnabled)
+            }
         } finally {
             ui { activity.finish() }; instrumentation.waitForIdleSync()
             if(oldDraft!=null)draft.writeBytes(oldDraft) else draft.delete()
