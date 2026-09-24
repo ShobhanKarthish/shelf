@@ -35,27 +35,28 @@ class DoodleDrawable(private val doodle: Doodle, color: Int, strokeDp: Float, pr
     @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.TRANSLUCENT
 }
 
-/** The one button that moves you forward on each screen: a dark pill, easy to find and easy to hit. */
+/** The one button that moves you forward on each screen: a red pill, easy to find and easy to hit. */
 @SuppressLint("AppCompatCustomView") // Native Activity/theme; no AppCompat tinting is used.
 class PrimaryButton(context: Context, label: String, icon: Doodle?=null) : Button(context) {
     init {
         val d=resources.displayMetrics.density; val r=28*d
         text=label; isAllCaps=false; typeface=Fonts.of(context).medium; setTextSize(TypedValue.COMPLEX_UNIT_SP,16f)
-        setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled),intArrayOf()),intArrayOf(Ink.INK_3,Ink.PAPER)))
-        val shape=StateListDrawable().apply { addState(intArrayOf(-android.R.attr.state_enabled),pill(Ink.LINE,r)); addState(intArrayOf(),pill(Ink.INK,r)) }
+        setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled),intArrayOf()),intArrayOf(Ink.alpha(Color.WHITE,.85f),Color.WHITE)))
+        val shape=StateListDrawable().apply { addState(intArrayOf(-android.R.attr.state_enabled),pill(Ink.alpha(Ink.ACCENT,.38f),r)); addState(intArrayOf(),pill(Ink.ACCENT,r)) }
         background=RippleDrawable(ColorStateList.valueOf(Ink.alpha(Color.WHITE,.2f)),shape,null)
         stateListAnimator=null; gravity=Gravity.CENTER; minWidth=0; minimumWidth=0; minHeight=(56*d).roundToInt(); minimumHeight=minHeight
         setPadding((28*d).roundToInt(),0,(28*d).roundToInt(),0)
-        if(icon!=null) { setCompoundDrawablesRelative(DoodleDrawable(icon,Ink.PAPER,2.2f,(20*d).roundToInt()),null,null,null); compoundDrawablePadding=(8*d).roundToInt() }
+        if(icon!=null) { setCompoundDrawablesRelative(DoodleDrawable(icon,Color.WHITE,2.2f,(20*d).roundToInt()),null,null,null); compoundDrawablePadding=(8*d).roundToInt() }
     }
 }
 
-/** Other choices: plain words, still a comfortable 48dp to tap. */
+/** Other choices: plain underlined words, still a comfortable 48dp to tap. */
 @SuppressLint("AppCompatCustomView")
-class QuietButton(context: Context, label: String, icon: Doodle?=null) : Button(context) {
+class QuietButton(context: Context, label: String, icon: Doodle?=null, color: Int=Ink.INK) : Button(context) {
     init {
         val d=resources.displayMetrics.density
-        text=label; isAllCaps=false; typeface=Fonts.of(context).medium; setTextSize(TypedValue.COMPLEX_UNIT_SP,15f); setTextColor(Ink.INK)
+        text=label; isAllCaps=false; typeface=Fonts.of(context).medium; setTextSize(TypedValue.COMPLEX_UNIT_SP,15f); setTextColor(color)
+        paintFlags=paintFlags or Paint.UNDERLINE_TEXT_FLAG
         background=ripple(24*d); stateListAnimator=null; gravity=Gravity.CENTER
         minWidth=0; minimumWidth=0; minHeight=(48*d).roundToInt(); minimumHeight=minHeight; setPadding((16*d).roundToInt(),0,(16*d).roundToInt(),0)
         if(icon!=null) { setCompoundDrawablesRelative(DoodleDrawable(icon,Ink.INK,2f,(22*d).roundToInt()),null,null,null); compoundDrawablePadding=(6*d).roundToInt() }
@@ -72,8 +73,8 @@ class IconButton(context: Context, doodle: Doodle, label: String) : Button(conte
     }
 }
 
-/** A sticker or print. [bottom] stands it on a shelf line instead of centring it; a new bitmap fades in. */
-class StickerView(context: Context, private val angle: Float=0f, private val bottom: Boolean=true) : View(context) {
+/** A sticker or print. [bottom] stands it on its lower edge instead of centring it; a new bitmap fades in. [paper] tapes or pins a print. */
+class StickerView(context: Context, private val angle: Float=0f, private val bottom: Boolean=true, private val paper: Paper?=null) : View(context) {
     private val d=resources.displayMetrics.density
     private val image=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val shade=Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter=PorterDuffColorFilter(Ink.INK,PorterDuff.Mode.SRC_IN) }
@@ -90,7 +91,9 @@ class StickerView(context: Context, private val angle: Float=0f, private val bot
         val dst=RectF(left,top,left+w,top+h)
         canvas.save(); canvas.rotate(angle,dst.centerX(),if(bottom) dst.bottom else dst.centerY())
         shade.alpha=18; canvas.save(); canvas.translate(0f,3*d); canvas.drawBitmap(b,null,dst,shade); canvas.restore()
-        canvas.drawBitmap(b,null,dst,image); canvas.restore()
+        canvas.drawBitmap(b,null,dst,image)
+        if(paper!=null) { canvas.translate(dst.left,dst.top); canvas.scale(d,d); drawFastener(canvas,paper,dst.width()/d,11) }
+        canvas.restore()
     }
 }
 
@@ -118,22 +121,22 @@ class SlotView(context: Context) : View(context) {
     }
 }
 
-/** A round button holding one object found in the photo. */
+/** A small card holding one object found in the photo. */
 @SuppressLint("AppCompatCustomView")
 class ChipButton(context: Context, number: Int, private val thumb: Bitmap) : Button(context) {
     private val d=resources.displayMetrics.density
     private val fill=Paint(Paint.ANTI_ALIAS_FLAG)
     private val image=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val ring=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=2.5f*d; color=Ink.ACCENT }
+    private val ring=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=2.5f*d; color=Pen.BLUE }
     init { text=""; contentDescription="Select object $number"; background=null; stateListAnimator=null; minWidth=0; minimumWidth=0; minHeight=0; minimumHeight=0; setPadding(0,0,0,0) }
     override fun setSelected(selected: Boolean) { super.setSelected(selected); invalidate() }
     override fun onDraw(canvas: Canvas) {
-        val cx=width/2f; val cy=height/2f; val r=28*d
-        fill.color=Ink.alpha(Ink.INK,.07f); canvas.drawCircle(cx,cy+2*d,r,fill)
-        fill.color=Ink.SURFACE; canvas.drawCircle(cx,cy,r,fill)
-        val s=min(40*d/thumb.width,40*d/thumb.height); val w=thumb.width*s; val h=thumb.height*s
+        val cx=width/2f; val cy=height/2f; val half=28*d; val card=RectF(cx-half,cy-half,cx+half,cy+half)
+        fill.color=Ink.alpha(Ink.INK,.08f); canvas.drawRoundRect(RectF(card).apply { offset(0f,2*d) },14*d,14*d,fill)
+        fill.color=Ink.SURFACE; canvas.drawRoundRect(card,14*d,14*d,fill)
+        val s=min(42*d/thumb.width,42*d/thumb.height); val w=thumb.width*s; val h=thumb.height*s
         canvas.drawBitmap(thumb,null,RectF(cx-w/2,cy-h/2,cx+w/2,cy+h/2),image)
-        if(isSelected) canvas.drawCircle(cx,cy,r+4*d,ring)
+        if(isSelected) canvas.drawRoundRect(RectF(card).apply { inset(-3*d,-3*d) },16*d,16*d,ring)
     }
 }
 

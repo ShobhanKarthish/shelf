@@ -59,8 +59,8 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
     private val under = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 4f * d; strokeJoin = Paint.Join.ROUND; color = Color.WHITE }
     private val dashes = DashPathEffect(floatArrayOf(6 * d, 5 * d), 0f)
     private val dash = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND; pathEffect = dashes }
-    private val trail = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.6f * d; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND; color = Ink.ACCENT }
-    private val pop = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.5f * d; color = Ink.ACCENT }
+    private val trail = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3.2f * d; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND; color = Color.WHITE }
+    private val pop = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.5f * d; color = Pen.BLUE }
     private val cut = Path()
     private val card = Path()
     private val smooth = AccelerateDecelerateInterpolator()
@@ -75,7 +75,7 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
         viewPaths = null; invalidate()
     }
     private fun photoRect(): RectF {
-        val m = 4 * d
+        val m = 16 * d // room for the print's white border and its tape
         val scale = minOf((width - 2 * m) / original.width, (height - 2 * m) / original.height)
         val w = original.width * scale; val h = original.height * scale
         return RectF((width - w) / 2, (height - h) / 2, (width + w) / 2, (height + h) / 2)
@@ -170,27 +170,35 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
         if (e in 0f..CUT) drawCutter(canvas, e)
         drawRing(canvas)
     }
+    /** The photo as a print: a white border, a soft shadow and a strip of tape at two corners. */
     private fun drawPhoto(c: Canvas, r: RectF) {
-        val radius = 14 * d
-        fill.color = Ink.alpha(Ink.INK, .06f); c.drawRoundRect(RectF(r).apply { offset(0f, 3 * d) }, radius, radius, fill)
-        card.reset(); card.addRoundRect(r, radius, radius, Path.Direction.CW)
-        c.save(); c.clipPath(card); c.drawBitmap(original, null, r, image); c.restore()
+        val frame = RectF(r).apply { inset(-8 * d, -8 * d) }
+        fill.color = Ink.alpha(Ink.INK, .1f); c.drawRect(RectF(frame).apply { offset(0f, 3 * d) }, fill)
+        fill.color = Color.WHITE; c.drawRect(frame, fill)
+        card.reset(); card.addRect(r, Path.Direction.CW)
+        c.drawBitmap(original, null, r, image)
+        c.save(); c.scale(d, d)
+        drawTape(c, frame.left / d + 4f, frame.top / d + 10f, 54f, -38f, 0); drawTape(c, frame.right / d - 4f, frame.bottom / d - 12f, 54f, -34f, 2)
+        c.restore()
     }
     private fun drawLines(c: Canvas, r: RectF) {
         val all = paths(); val sel = selectedIndex
-        if (sel != null && sel < all.size) { c.save(); c.clipPath(card); c.clipOutPath(all[sel]); fill.color = Ink.alpha(Ink.PAPER, .6f); c.drawRect(r, fill); c.restore() }
+        if (sel != null && sel < all.size) { c.save(); c.clipPath(card); c.clipOutPath(all[sel]); fill.color = Ink.alpha(Ink.INK, .45f); c.drawRect(r, fill); c.restore() }
         all.forEachIndexed { i, p ->
             val faded = sel != null && i != sel
-            under.alpha = if (faded) 50 else 190; c.drawPath(p, under)
-            dash.color = if (i == sel) Ink.ACCENT else Ink.INK; dash.strokeWidth = (if (i == sel) 2.6f else 2f) * d; dash.alpha = if (faded) 80 else 255
+            under.alpha = if (faded) 60 else 230; c.drawPath(p, under)
+            // The chosen line is drawn solid; the others stay dashed.
+            dash.color = Pen.BLUE; dash.strokeWidth = (if (i == sel) 3f else 2f) * d; dash.alpha = if (faded) 70 else 255
+            dash.pathEffect = if (i == sel) null else dashes
             c.drawPath(p, dash)
         }
+        dash.pathEffect = dashes
     }
     private fun cutProgress(e: Float) = smooth.getInterpolation(min(1f, e / CUT))
     private fun drawCut(c: Canvas, e: Float) {
         val p = paths().getOrNull(selectedIndex ?: return) ?: return
         under.alpha = 190; c.drawPath(p, under)
-        dash.color = Ink.ACCENT; dash.strokeWidth = 2.6f * d; dash.alpha = 255; c.drawPath(p, dash)
+        dash.color = Pen.BLUE; dash.strokeWidth = 2.6f * d; dash.alpha = 255; c.drawPath(p, dash)
         cut.reset(); cutMeasure?.getSegment(0f, cutProgress(e) * cutLength, cut, true); c.drawPath(cut, trail)
     }
     private fun drawCutter(c: Canvas, e: Float) {
