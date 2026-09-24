@@ -67,6 +67,10 @@ class MainActivity : Activity(), ThingHost {
     private var onDark = false
     /** Rebuilds a screen laid out around the system bars when their size changes. */
     private var relayout: (() -> Unit)? = null
+    /** How much of the bottom of the screen the keyboard covers; zero while it's closed. */
+    private var keyboard = 0
+    /** The open dialog or sheet, kept clear of the keyboard. */
+    private var openDialog: View? = null
 
     // Where you are.
     private var calendarMode = false
@@ -161,23 +165,30 @@ class MainActivity : Activity(), ThingHost {
     }
     /** Starts a screen on the desk ([paper] null) or on a sheet of paper. */
     private fun stage(name: String, paper: Paper?) {
-        selectionView?.dispose(); selectionView=null; closeNote=null; bookView=null; relayout=null; veil=null
+        selectionView?.dispose(); selectionView=null; closeNote=null; bookView=null; relayout=null; veil=null; openDialog=null
         page=name; titleField=null; storyField=null; onDark=paper==null || paper.dark
         frame=FrameLayout(this).apply {
             if(paper==null) setBackgroundColor(Pen.DESK) else background=PaperBackground(paper,density)
-            @Suppress("DEPRECATION")
+            // Only the bars decide a screen's layout. The keyboard coming and going must never rebuild a screen,
+            // or a dialog being typed into would be thrown away with it.
             setOnApplyWindowInsetsListener { _,insets ->
-                val t=insets.systemWindowInsetTop; val b=insets.systemWindowInsetBottom
+                val (t,b,k)=barsAndKeyboard(insets)
                 if(t!=insetTop || b!=insetBottom) {
                     insetTop=t; insetBottom=b; post { relayout?.invoke() ?: pad() }
-                    if(relayout!=null) prefs.edit().putInt("insetTop",t).putInt("insetBottom",b).apply() // never with a keyboard open
+                    prefs.edit().putInt("insetTop",t).putInt("insetBottom",b).apply()
                 }
+                if(k!=keyboard) { keyboard=k; post { pad(); openDialog?.setPadding(0,0,0,keyboard) } }
                 insets
             }
         }
         setContentView(frame)
         bars(onDark)
     }
+    /** The system bars at the top and bottom, and the keyboard's height from the bottom of the screen. */
+    @Suppress("DEPRECATION")
+    private fun barsAndKeyboard(insets: WindowInsets): Triple<Int,Int,Int> =
+        if(Build.VERSION.SDK_INT>=30) insets.getInsets(WindowInsets.Type.systemBars()).let { Triple(it.top,it.bottom,insets.getInsets(WindowInsets.Type.ime()).bottom) }
+        else Triple(insets.stableInsetTop,insets.stableInsetBottom,max(0,insets.systemWindowInsetBottom-insets.stableInsetBottom))
     /** A scrolling column of words and buttons on [paper], for adding and naming things. */
     private fun flow(name: String, paper: Paper=bookFor(draftBook).paper) {
         stage(name,paper)
@@ -193,7 +204,9 @@ class MainActivity : Activity(), ThingHost {
     private fun redraw(view: View) { view.invalidate(); (view as? ViewGroup)?.let { g -> for(i in 0 until g.childCount) redraw(g.getChildAt(i)) } }
     private fun pad() {
         if(!::body.isInitialized) return
-        body.setPadding(dp(20),insetTop+dp(8),dp(20),insetBottom+dp(24))
+        // With the keyboard open, the column ends above it; scrolling views keep the field being typed in on screen as they shrink.
+        body.setPadding(dp(20),insetTop+dp(8),dp(20),(if(keyboard>0) 0 else insetBottom)+dp(24))
+        (scroll.layoutParams as? FrameLayout.LayoutParams)?.let { if(it.bottomMargin!=keyboard) { it.bottomMargin=keyboard; scroll.layoutParams=it } }
         veil?.let { it.layoutParams=it.layoutParams.apply { height=insetTop+dp(12) } }
     }
     private fun text(value: String, sp: Float, face: Typeface, color: Int=if(onDark) Color.WHITE else Ink.INK, spacing: Float=1.3f) = TextView(this).apply {
@@ -273,10 +286,11 @@ class MainActivity : Activity(), ThingHost {
     /** A white card with a question: a plain way out, and the action in red. [field] asks for a few words too. */
     private fun ask(heading: String, message: String?, confirm: String, cancel: String?=null, field: EditText?=null, onConfirm: () -> Boolean={ true }) {
         closeNote?.invoke()
-        val scrim=FrameLayout(this).apply { setBackgroundColor(Color.argb(122,18,20,30)); isClickable=true }
+        val scrim=FrameLayout(this).apply { setBackgroundColor(Color.argb(122,18,20,30)); isClickable=true; setPadding(0,0,0,keyboard) }
         frame.addView(scrim,FrameLayout.LayoutParams(-1,-1))
         val uncover=cover(scrim)
-        val close={ frame.removeView(scrim); uncover(); closeNote=null }
+        val close={ frame.removeView(scrim); uncover(); closeNote=null; if(openDialog===scrim) openDialog=null }
+        openDialog=scrim
         val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=pill(Color.WHITE,dp(22f)); setPadding(dp(22),dp(22),dp(18),dp(12)); elevation=dp(10f); isClickable=true }
         card.addView(TextView(this).apply { text=heading; typeface=fonts.hand; setTextSize(TypedValue.COMPLEX_UNIT_SP,27f); setTextColor(Ink.INK); isAccessibilityHeading=true })
         if(message!=null) card.addView(TextView(this).apply { text=message; typeface=fonts.sans; setTextSize(TypedValue.COMPLEX_UNIT_SP,15f); setTextColor(Ink.INK_2); setLineSpacing(0f,1.3f) },LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(6) })
@@ -306,15 +320,16 @@ class MainActivity : Activity(), ThingHost {
     /** A white sheet from the bottom of the screen, for options. */
     private fun sheet(build: (LinearLayout, () -> Unit) -> Unit) {
         closeNote?.invoke()
-        val scrim=FrameLayout(this).apply { setBackgroundColor(Color.argb(122,18,20,30)); isClickable=true }
+        val scrim=FrameLayout(this).apply { setBackgroundColor(Color.argb(122,18,20,30)); isClickable=true; setPadding(0,0,0,keyboard) }
         frame.addView(scrim,FrameLayout.LayoutParams(-1,-1))
         val uncover=cover(scrim)
+        openDialog=scrim
         val panel=LinearLayout(this).apply {
             orientation=LinearLayout.VERTICAL; isClickable=true; elevation=dp(12f); setPadding(dp(16),dp(10),dp(16),insetBottom+dp(20))
             background=GradientDrawable().apply { setColor(Color.WHITE); cornerRadii=floatArrayOf(dp(24f),dp(24f),dp(24f),dp(24f),0f,0f,0f,0f) }
         }
         panel.addView(View(this).apply { background=pill(Ink.LINE,dp(2f)) },LinearLayout.LayoutParams(dp(40),dp(4)).apply { gravity=Gravity.CENTER_HORIZONTAL; bottomMargin=dp(10) })
-        val close={ frame.removeView(scrim); uncover(); closeNote=null }
+        val close={ frame.removeView(scrim); uncover(); closeNote=null; if(openDialog===scrim) openDialog=null }
         build(panel,close)
         scrim.addView(panel,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
         scrim.setOnClickListener { close() }
