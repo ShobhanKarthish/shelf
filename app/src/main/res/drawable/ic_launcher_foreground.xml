@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A kraft name tag on its string: the keepsake and the story it carries. Drawn in a 48 box, placed in the 108 dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:pivotX="24" android:pivotY="25" android:rotation="-18" android:scaleX="1.18" android:scaleY="1.18" android:translateX="30" android:translateY="31">
+        <path android:pathData="M11,25 C5,21 3,13 8,7" android:strokeColor="#F6F4EE" android:strokeWidth="2.2" android:strokeLineCap="round" />
+        <path android:pathData="M12,14 L42,14 C43.5,14 44.5,15 44.5,16.5 L44.5,33.5 C44.5,35 43.5,36 42,36 L12,36 L4,25 Z"
+            android:fillColor="#E9D3AF" android:strokeColor="#F6F4EE" android:strokeWidth="2.4" android:strokeLineJoin="round" />
+        <path android:pathData="M8.6,25 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 Z" android:fillColor="#1C1E28" />
+        <path android:pathData="M18,25 C20,21 22,29 24,25 S28,21 30,25 S34,29 37.5,25" android:strokeColor="#1C1E28" android:strokeWidth="2.4" android:strokeLineCap="round" />
+    </group>
+</vector>
