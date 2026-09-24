@@ -6,7 +6,7 @@ import android.content.res.Resources
 import android.graphics.*
 import kotlin.math.*
 
-/** Warm paper, near-black ink and one accent for the cut line. Colour otherwise comes from the things people keep. */
+/** Warm paper, near-black ink and one red for stamps and actions. Colour otherwise comes from the things people keep. */
 object Ink {
     val PAPER=Color.rgb(246,244,238); val SURFACE=Color.WHITE
     val INK=Color.rgb(28,30,40); val INK_2=Color.rgb(92,96,110); val INK_3=Color.rgb(128,131,142)
@@ -63,7 +63,17 @@ enum class Doodle(private val data: String) {
     X("M6 6 C 10 10, 14 14, 18 18 M18 6 C 14 10, 10 14, 6 18"),
     BACK("M20 12 C 15 12, 10 12, 5 12 M11 6 C 9 8, 7 10, 5 12 C 7 14, 9 16, 11 18"),
     PLUS("M12 5 L12 19 M5 12 L19 12"),
-    CHECK("M5 12.5 L10 17 L19 7");
+    CHECK("M5 12.5 L10 17 L19 7"),
+    PREV("M14.5 5 L7.5 12 L14.5 19"),
+    NEXT("M9.5 5 L16.5 12 L9.5 19"),
+    BOOK("M3 5.5 C6 4.5 9 4.5 12 6 C15 4.5 18 4.5 21 5.5 L21 19 C18 18 15 18 12 19.5 C9 18 6 18 3 19 Z M12 6 L12 19.5"),
+    CALENDAR("M5.5 5 L18.5 5 C19.6 5 20.5 5.9 20.5 7 L20.5 18 C20.5 19.1 19.6 20 18.5 20 L5.5 20 C4.4 20 3.5 19.1 3.5 18 L3.5 7 C3.5 5.9 4.4 5 5.5 5 Z M3.5 10 L20.5 10 M8 3 L8 7 M16 3 L16 7"),
+    MORE("M5 12 L5.1 12 M12 12 L12.1 12 M19 12 L19.1 12"),
+    PENCIL("M5 19 L9 18 L19 8 L16 5 L6 15 Z M14 7 L17 10"),
+    ROTATE("M19 12 C19 15.9 15.9 19 12 19 C8.1 19 5 15.9 5 12 C5 8.1 8.1 5 12 5 C13.9 5 15.6 5.7 16.9 7 M17.5 2.5 L17 7 L12.5 6.5"),
+    NEW_BOOK("M4 5 C7 4 10 4.5 12 6 L12 19.5 C10 18 7 17.5 4 18.5 Z M12 6 C14 4.5 17 4 20 5 L20 11 M17 15 L17 21 M14 18 L20 18"),
+    RENAME("M4 19 L8 18 L18 8 L15 5 L5 15 Z M13 7 L16 10 M12 19 L20 19"),
+    TRASH("M5 7 L19 7 M10 7 L10 4.5 L14 4.5 L14 7 M7 7 L8 20 L16 20 L17 7");
     val path: Path by lazy { svgPath(data) }
 }
 
