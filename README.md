@@ -7,8 +7,8 @@ Shelf is a native Android app for collecting meaningful objects as photo cutouts
 ## Features
 
 - Choose a photo with Android’s system photo picker.
-- Press and hold an object to select it, then confirm with **Keep this**. Object buttons also support accessible selection.
-- Watch a gentle three-second reveal, or keep the original as a framed photo. Background removal runs on-device.
+- Tap an object in your photo (or press and hold) to select it, then **Snip it out**. When the photo holds one object, it is selected for you; the round object buttons below the photo also support accessible selection.
+- Watch scissors cut it out as a sticker, or keep the whole photo as a framed print. Background removal runs on-device.
 - Add a title and optional story, then save it to a shelf.
 - Revisit your objects and their stories whenever you like.
 
@@ -77,7 +77,14 @@ Subsequent release-signed builds can update the release app normally.
 
 ## Development
 
-Shelf uses Kotlin, native Android views, SQLite, and ML Kit subject segmentation. Cormorant Garamond and Inter are bundled with the app.
+Shelf uses Kotlin, native Android views, SQLite, and ML Kit subject segmentation. Its look is drawn in code (`Collage.kt`, `CollageViews.kt`, `Stickers.kt`, `Welcome.kt`); titles use the bundled Patrick Hand font and everything else uses the system sans. Stickers are cut on background threads and cached in the app's cache folder, and all motion is skipped when the system turns animations off.
+
+Debug builds are noticeably slower than release builds. To try release speed on a phone without the release key, build the preview variant, which is shrunk like a release build, signed with the debug key, and installs next to Shelf as "Shelf Preview":
+
+```sh
+./gradlew assemblePreview
+adb install -r app/build/outputs/apk/preview/app-preview.apk
+```
 
 Run lint:
 
@@ -108,4 +115,4 @@ Bug reports and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIB
 
 ## Fonts
 
-Cormorant Garamond and Inter use the SIL Open Font License. Their license notices are included in [licenses/](licenses/).
+Patrick Hand uses the SIL Open Font License. Its license notice is included in [licenses/](licenses/).
