@@ -52,7 +52,7 @@ The generated APK is debug-signed for development.
 
 Download versioned APKs from [GitHub Releases](https://github.com/ShobhanKarthish/shelf/releases).
 The standard APK is a non-debuggable release signed with Shelf's release key.
-Version `0.2.0` uses Android version code `2`; increase the version code for every new release.
+Version `0.3.0` uses Android version code `3`; increase the version code for every new release.
 
 To build a signed release, keep your keystore and signing properties outside the repository:
 
@@ -71,7 +71,7 @@ Signing credentials are required for release builds. Back up the keystore and cr
 future updates must use the same signing key. Never commit them.
 
 The release APK cannot update an earlier debug-signed installation. The separately labelled
-`debug-upgrade` APK in v0.2.0 updates the earlier development build while retaining its local data.
+`debug-upgrade` APKs (from v0.2.0) update the earlier development build while retaining its local data.
 Do not uninstall an existing installation containing keepsakes you want to retain: Shelf has no export yet.
 Subsequent release-signed builds can update the release app normally.
 
