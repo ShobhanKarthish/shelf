@@ -1,31 +1,65 @@
-# Shelf
+<p align="center">
+  <img src="docs/icon.svg" width="112" height="112" alt="Shelf app icon: a kraft name tag on its string">
+</p>
 
-A quiet place for the things you kept.
+<h1 align="center">Shelf</h1>
 
-Shelf is a native Android app for collecting meaningful objects as photo cutouts. Give each object a title, add a story if you like, and arrange your collection on shelves.
+<p align="center"><strong>A quiet place for the things you kept.</strong></p>
+
+<p align="center">
+  <img alt="Android 9 or later" src="https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white">
+  <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white">
+  <img alt="On-device processing" src="https://img.shields.io/badge/processing-on--device-1C1E28">
+  <img alt="No account needed" src="https://img.shields.io/badge/account-not%20needed-DE5230">
+</p>
+
+<p align="center">
+  <a href="https://github.com/ShobhanKarthish/shelf/releases">Download</a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
+
+---
+
+Shelf is a native Android app for keeping the small things that matter: a ticket, a shell, a key. Photograph an object and Shelf cuts it out on your phone, like a sticker. Give it a name and a story if you like, and keep it on a shelf.
+
+| Welcome | Your shelf | Choose | Snip | Story |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="docs/screenshots/welcome.png" width="160" alt="Welcome screen with hand-drawn keepsakes"> | <img src="docs/screenshots/shelf.png" width="160" alt="An empty shelf waiting for its first thing"> | <img src="docs/screenshots/choose.png" width="160" alt="A photo with a dashed cut line around a shell"> | <img src="docs/screenshots/snip.png" width="160" alt="The shell cut out as a sticker"> | <img src="docs/screenshots/story.png" width="160" alt="Naming the object and adding a story"> |
 
 ## Features
 
-- Choose a photo with Android’s system photo picker.
-- Tap an object in your photo (or press and hold) to select it, then **Snip it out**. When the photo holds one object, it is selected for you; the round object buttons below the photo also support accessible selection.
-- Watch scissors cut it out as a sticker, or keep the whole photo as a framed print. Background removal runs on-device.
-- Add a title and optional story, then save it to a shelf.
-- Revisit your objects and their stories whenever you like.
+- **Cut-outs on your phone.** ML Kit subject segmentation finds the objects in a photo and draws a dashed cut line around each. Tap one, or press and hold, then **Snip it out**. When a photo holds a single object, it is selected for you.
+- **Whole photos too.** Keep the full photo as a framed print, by choice or when an object can't be separated.
+- **Names and stories.** Give each thing a title, an optional story, and a shelf.
+- **Shelves.** Stickers stand on hand-drawn shelves, grouped by shelf name, and open into a page of their own.
+- **Private by design.** No account and no uploads. Photos and details stay in app-private storage.
+- **Accessible.** Screen reader labels, buttons as an alternative to gestures, 48 dp touch targets, and no motion when system animations are off.
 
-Photos and metadata stay in app-private storage. No account is required.
+## Download
 
-## Getting started
+Get the latest APK from [GitHub Releases](https://github.com/ShobhanKarthish/shelf/releases). Shelf needs Android 9 or later, and Google Play services for background removal.
+
+| APK | What it is |
+| --- | --- |
+| `shelf-<version>.apk` | The standard release, signed with Shelf's release key. |
+| `shelf-<version>-debug-upgrade.apk` | Updates an earlier development build and keeps its shelf. |
+| `shelf-<version>-preview.apk` | Installs next to Shelf as **Shelf Preview**, with its own shelf. |
+
+> [!WARNING]
+> Uninstalling Shelf or clearing its storage deletes your collection. There is no export or backup yet.
+
+The segmentation model downloads through Google Play services the first time it is needed. After that, background removal works offline.
+
+## Build from source
 
 ### Requirements
 
-- Android 9 (API 28) or later
 - JDK 17
 - Android SDK Platform 35 and Build Tools 35.0.0
-- Google Play services for background removal
+- A device or emulator running Android 9 or later, with Google Play services
 
-The segmentation model needs an internet connection for its initial download. Once available, background removal works offline. Framed photos work when segmentation is unavailable. Selection is limited to subjects the model detects separately; touching or overlapping objects can be grouped together.
-
-### Build
+### Build and run
 
 ```sh
 git clone https://github.com/ShobhanKarthish/shelf.git
@@ -38,7 +72,7 @@ Open the project in Android Studio, or set `JAVA_HOME` to your JDK 17 installati
 sdk.dir=/absolute/path/to/Android/sdk
 ```
 
-Build and install on a connected device or emulator:
+Then build, install and launch:
 
 ```sh
 ./gradlew assembleDebug
@@ -46,15 +80,17 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.shobhankarthish.shelf/.MainActivity
 ```
 
-The generated APK is debug-signed for development.
+### Build variants
 
-## Releases
+| Variant | Command | Notes |
+| --- | --- | --- |
+| Debug | `./gradlew assembleDebug` | Debuggable, and noticeably slower. |
+| Preview | `./gradlew assemblePreview` | Release speed with the debug key; installs as **Shelf Preview**. |
+| Release | `./gradlew assembleRelease` | Needs the release key; see below. |
 
-Download versioned APKs from [GitHub Releases](https://github.com/ShobhanKarthish/shelf/releases).
-The standard APK is a non-debuggable release signed with Shelf's release key.
-Version `0.3.0` uses Android version code `3`; increase the version code for every new release.
+### Signing a release
 
-To build a signed release, keep your keystore and signing properties outside the repository:
+Keep the keystore and its signing properties outside the repository:
 
 ```properties
 storeFile=/absolute/path/to/release.jks
@@ -67,24 +103,11 @@ keyPassword=your-key-password
 SHELF_SIGNING_PROPERTIES=/absolute/path/to/release-signing.properties ./gradlew assembleRelease
 ```
 
-Signing credentials are required for release builds. Back up the keystore and credentials securely;
-future updates must use the same signing key. Never commit them.
+Back up the keystore and credentials securely: every future update must be signed with the same key. Never commit them. Increase `versionCode` in `app/build.gradle.kts` for every release; version `0.3.0` uses version code `3`.
 
-The release APK cannot update an earlier debug-signed installation. The separately labelled
-`debug-upgrade` APKs (from v0.2.0) update the earlier development build while retaining its local data.
-Do not uninstall an existing installation containing keepsakes you want to retain: Shelf has no export yet.
-Subsequent release-signed builds can update the release app normally.
+A release-signed APK cannot update a debug-signed installation. Use the matching `debug-upgrade` APK to update a development build without losing its shelf.
 
-## Development
-
-Shelf uses Kotlin, native Android views, SQLite, and ML Kit subject segmentation. Its look is drawn in code (`Collage.kt`, `CollageViews.kt`, `Stickers.kt`, `Welcome.kt`); titles use the bundled Patrick Hand font and everything else uses the system sans. Stickers are cut on background threads and cached in the app's cache folder, and all motion is skipped when the system turns animations off.
-
-Debug builds are noticeably slower than release builds. To try release speed on a phone without the release key, build the preview variant, which is shrunk like a release build, signed with the debug key, and installs next to Shelf as "Shelf Preview":
-
-```sh
-./gradlew assemblePreview
-adb install -r app/build/outputs/apk/preview/app-preview.apk
-```
+## Testing
 
 Run lint:
 
@@ -92,7 +115,7 @@ Run lint:
 ./gradlew lintDebug
 ```
 
-Run the instrumentation tests on a connected device or emulator with Google Play services:
+Run the instrumentation tests on a device or emulator with Google Play services:
 
 ```sh
 ./gradlew assembleDebug assembleDebugAndroidTest
@@ -101,18 +124,36 @@ adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w com.shobhankarthish.shelf.test/android.test.InstrumentationTestRunner
 ```
 
-The segmentation test uses the real model. On a fresh device, allow the model download to finish before retrying the test. Other checks cover transparent cropping, input validation, and local persistence.
+The tests use the real segmentation model, so let its first download finish on a fresh device before running them. They cover single and multiple-object segmentation, tap and long-press selection, snipping, sticker outlines, persistence, and restoring a draft after the activity is recreated.
+
+On a slow emulator the test runner can time out while it scans for tests. Run one class at a time instead:
+
+```sh
+adb shell am instrument -w -e class com.shobhankarthish.shelf.SelectionTest com.shobhankarthish.shelf.test/android.test.InstrumentationTestRunner
+```
+
+## Project structure
+
+Shelf uses Kotlin, native Android views, SQLite and ML Kit subject segmentation, with no other libraries. Everything lives in `app/src/main/java/com/shobhankarthish/shelf/`:
+
+| File | What it does |
+| --- | --- |
+| `MainActivity.kt` | Every screen, the add flow, saving and draft restoration. |
+| `SubjectSelectionView.kt` | The photo, its cut lines, tap selection and the snip animation. |
+| `Stickers.kt` | Cuts stickers on background threads and caches them. |
+| `Welcome.kt` | The drawn keepsakes on the welcome screen. |
+| `CollageViews.kt` | Buttons, sticker views, shelf rows and other components. |
+| `Collage.kt` | Palette, fonts, hand-drawn marks and the scissors. |
+| `ShelfStore.kt` | Local storage for objects and their images. |
 
 ## Current limitations
 
-Shelf is in early development. Editing and deleting saved objects, camera capture, and export are not available yet. Collections are intended to be small.
-
-Imported images are scaled to a maximum long edge of 1600 pixels. Uninstalling Shelf or clearing its storage removes saved objects; there is no backup or sync.
+Shelf is in early development. Editing and deleting saved objects, camera capture, and export are not available yet, and collections are meant to be small. Imported images are scaled to a maximum long edge of 1600 pixels. Selection only separates objects the model detects separately, so touching or overlapping objects can come out as one.
 
 ## Contributing
 
-Bug reports and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+Bug reports and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
 
-## Fonts
+## Credits
 
-Patrick Hand uses the SIL Open Font License. Its license notice is included in [licenses/](licenses/).
+Titles are set in [Patrick Hand](https://fonts.google.com/specimen/Patrick+Hand) by Patrick Wagesreiter, under the SIL Open Font License. Its license notice is in [licenses/](licenses/).

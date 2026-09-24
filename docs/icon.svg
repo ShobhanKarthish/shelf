@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 18 72 72" width="512" height="512" role="img" aria-label="Shelf app icon: a kraft name tag on its string">
+  <defs>
+    <clipPath id="mask"><path d="M54 18 C80 18 90 28 90 54 C90 80 80 90 54 90 C28 90 18 80 18 54 C18 28 28 18 54 18 Z"/></clipPath>
+  </defs>
+  <g clip-path="url(#mask)">
+    <rect width="108" height="108" fill="#1C1E28"/>
+    <g transform="translate(54 56) rotate(-18) scale(1.18) translate(-24 -25)">
+      <path d="M11 25 C5 21 3 13 8 7" fill="none" stroke="#F6F4EE" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M12 14 L42 14 C43.5 14 44.5 15 44.5 16.5 L44.5 33.5 C44.5 35 43.5 36 42 36 L12 36 L4 25 Z" fill="#E9D3AF" stroke="#F6F4EE" stroke-width="2.4" stroke-linejoin="round"/>
+      <circle cx="11" cy="25" r="2.4" fill="#1C1E28"/>
+      <path d="M18 25 C20 21 22 29 24 25 S 28 21 30 25 S 34 29 37.5 25" fill="none" stroke="#1C1E28" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>
