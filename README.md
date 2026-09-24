@@ -21,20 +21,23 @@
 
 ---
 
-Shelf is a native Android app for keeping the small things that matter: a ticket, a shell, a key. Photograph an object and Shelf cuts it out on your phone, like a sticker. Give it a name and a story if you like, and keep it on a shelf.
+Shelf is a native Android app for keeping the small things that matter: a ticket, a shell, a key. Photograph an object and Shelf cuts it out on your phone, like a sticker. Give it a name and a story if you like, and stick it into a book.
 
-| Welcome | Your shelf | Choose | Snip | Story |
+| Welcome | Your books | A page | Choose | Name it |
 | :---: | :---: | :---: | :---: | :---: |
-| <img src="docs/screenshots/welcome.png" width="160" alt="Welcome screen with hand-drawn keepsakes"> | <img src="docs/screenshots/shelf.png" width="160" alt="An empty shelf waiting for its first thing"> | <img src="docs/screenshots/choose.png" width="160" alt="A photo with a dashed cut line around a shell"> | <img src="docs/screenshots/snip.png" width="160" alt="The shell cut out as a sticker"> | <img src="docs/screenshots/story.png" width="160" alt="Naming the object and adding a story"> |
+| <img src="docs/screenshots/welcome.png" width="160" alt="Welcome screen with hand-drawn keepsakes"> | <img src="docs/screenshots/books.png" width="160" alt="A book on the desk, its cover made from the shells inside"> | <img src="docs/screenshots/page.png" width="160" alt="A page of shells with kraft name tags, a taped print and a date stamp"> | <img src="docs/screenshots/choose.png" width="160" alt="A taped photo with a blue cut line around a shell"> | <img src="docs/screenshots/name.png" width="160" alt="The shell sticker tied to a kraft tag to write its name on"> |
 
 ## Features
 
 - **Cut-outs on your phone.** ML Kit subject segmentation finds the objects in a photo and draws a dashed cut line around each. Tap one, or press and hold, then **Snip it out**. When a photo holds a single object, it is selected for you.
-- **Whole photos too.** Keep the full photo as a framed print, by choice or when an object can't be separated.
-- **Names and stories.** Give each thing a title, an optional story, and a shelf.
-- **Shelves.** Stickers stand on hand-drawn shelves, grouped by shelf name, and open into a page of their own.
+- **Whole photos too.** Keep the full photo as a print, by choice or when an object can't be separated.
+- **Books.** Things go into books you swipe between on a desk. Each cover is made from its own things, with the book's name in cut-out letters.
+- **Pages that fill up.** Four things to a page, each with its name on a kraft tag and the start of its story in pen. Drag a page and it turns around the spine like paper, or use the arrows.
+- **Arrange a page.** Drag things, twist them, and choose the book's paper: grid, dots, lined, plain or cork.
+- **A calendar.** See each month with the things you kept on the days you kept them.
+- **A page for each thing.** The sticker, the photo it was cut from, its date and its story. Edit, move or delete it from there.
 - **Private by design.** No account and no uploads. Photos and details stay in app-private storage.
-- **Accessible.** Screen reader labels, buttons as an alternative to gestures, 48 dp touch targets, and no motion when system animations are off.
+- **Accessible.** Screen reader labels, buttons as an alternative to every gesture, 48 dp touch targets, and no motion when system animations are off.
 
 ## Download
 
@@ -43,7 +46,7 @@ Get the latest APK from [GitHub Releases](https://github.com/ShobhanKarthish/she
 | APK | What it is |
 | --- | --- |
 | `shelf-<version>.apk` | The standard release, signed with Shelf's release key. |
-| `shelf-<version>-debug-upgrade.apk` | Updates an earlier development build and keeps its shelf. |
+| `shelf-<version>-debug-upgrade.apk` | Updates an earlier development build and keeps its books. |
 | `shelf-<version>-preview.apk` | Installs next to Shelf as **Shelf Preview**, with its own shelf. |
 
 > [!WARNING]
@@ -105,7 +108,7 @@ SHELF_SIGNING_PROPERTIES=/absolute/path/to/release-signing.properties ./gradlew 
 
 Back up the keystore and credentials securely: every future update must be signed with the same key. Never commit them. Increase `versionCode` in `app/build.gradle.kts` for every release; version `0.3.0` uses version code `3`.
 
-A release-signed APK cannot update a debug-signed installation. Use the matching `debug-upgrade` APK to update a development build without losing its shelf.
+A release-signed APK cannot update a debug-signed installation. Use the matching `debug-upgrade` APK to update a development build without losing its books.
 
 ## Testing
 
@@ -138,17 +141,19 @@ Shelf uses Kotlin, native Android views, SQLite and ML Kit subject segmentation,
 
 | File | What it does |
 | --- | --- |
-| `MainActivity.kt` | Every screen, the add flow, saving and draft restoration. |
+| `MainActivity.kt` | Every screen: the desk, pages, the calendar, a thing's page, and adding, editing and saving. |
+| `BookViews.kt` | Pages and the page turn, covers, the calendar sheet and a thing on its page. |
+| `Scrap.kt` | Paper, grain, tape, pins, stamps, kraft tags, pen notes and cut-out letters. |
 | `SubjectSelectionView.kt` | The photo, its cut lines, tap selection and the snip animation. |
 | `Stickers.kt` | Cuts stickers on background threads and caches them. |
 | `Welcome.kt` | The drawn keepsakes on the welcome screen. |
-| `CollageViews.kt` | Buttons, sticker views, shelf rows and other components. |
-| `Collage.kt` | Palette, fonts, hand-drawn marks and the scissors. |
-| `ShelfStore.kt` | Local storage for objects and their images. |
+| `CollageViews.kt` | Buttons, sticker views and other shared components. |
+| `Collage.kt` | Palette, fonts, icons and the scissors. |
+| `ShelfStore.kt` | Local storage for books, things, their images and where they sit on a page. |
 
 ## Current limitations
 
-Shelf is in early development. Editing and deleting saved objects, camera capture, and export are not available yet, and collections are meant to be small. Imported images are scaled to a maximum long edge of 1600 pixels. Selection only separates objects the model detects separately, so touching or overlapping objects can come out as one.
+Shelf is in early development. Camera capture and export are not available yet, and collections are meant to be small. Imported images are scaled to a maximum long edge of 1600 pixels. Selection only separates objects the model detects separately, so touching or overlapping objects can come out as one.
 
 ## Contributing
 
