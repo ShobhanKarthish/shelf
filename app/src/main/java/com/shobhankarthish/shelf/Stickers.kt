@@ -122,16 +122,18 @@ object Stickers {
 
     private fun make(context: Context, store: ShelfStore, item: Keepsake, size: Int): Bitmap? {
         val file=master(context,store,item) ?: return null
-        return decodeSampled(file.path,size)?.also { memory.put("${item.id}@$size",it) }
+        // A cut that can't be read (say, from a write the app was killed during) is made again rather than left blank.
+        val b=decodeSampled(file.path,size) ?: run { file.delete(); master(context,store,item)?.let { decodeSampled(it.path,size) } }
+        return b?.also { memory.put("${item.id}@$size",it) }
     }
     @Synchronized // One cut per object, even when a load and a prepare race.
     private fun master(context: Context, store: ShelfStore, item: Keepsake): File? {
         val file=File(File(context.cacheDir,"stickers-v2").apply { mkdirs() },"${item.id}.png")
-        if(file.exists()) return file
+        if(file.length()>0) return file
         val src=decodeSampled(store.image(item.id).path,MASTER) ?: return null
         val art=if(item.framed) polaroid(src) else makeSticker(src,seedOf(item.id)) ?: src
         val temp=File(file.path+".tmp")
-        temp.outputStream().use { check(art.compress(Bitmap.CompressFormat.PNG,100,it)) }
+        temp.outputStream().use { check(art.compress(Bitmap.CompressFormat.PNG,100,it)); it.fd.sync() }
         check(temp.renameTo(file))
         return file
     }
