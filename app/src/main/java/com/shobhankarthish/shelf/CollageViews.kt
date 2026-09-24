@@ -97,30 +97,6 @@ class StickerView(context: Context, private val angle: Float=0f, private val bot
     }
 }
 
-/** One shelf: a hand-drawn pencil line. Things stand on it; their names sit underneath. */
-class ShelfRow(context: Context, private val seed: Int, private val lineAt: Float) : LinearLayout(context) {
-    private val d=resources.displayMetrics.density
-    private val pencil=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=1.8f*d; color=Ink.alpha(Ink.INK,.75f); strokeCap=Paint.Cap.ROUND }
-    private var line=Path()
-    init { orientation=HORIZONTAL; setWillNotDraw(false); clipChildren=false; clipToPadding=false }
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { line=wobblyLine(2*d,w-2*d,lineAt*d,seed,.9f*d) }
-    override fun onDraw(canvas: Canvas) { canvas.drawPath(line,pencil) }
-}
-
-/** An empty dashed place on the shelf, waiting for the first thing. */
-class SlotView(context: Context) : View(context) {
-    private val d=resources.displayMetrics.density
-    private val dash=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=1.8f*d; color=Ink.INK_3; pathEffect=DashPathEffect(floatArrayOf(6*d,6*d),0f) }
-    private val plus=DoodleDrawable(Doodle.PLUS,Ink.INK_3,2f,(28*d).roundToInt())
-    private var box=Path()
-    init { importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { box=sketchBox(RectF(2*d,2*d,w-2*d,h-2*d),14*d,7) }
-    override fun onDraw(canvas: Canvas) {
-        canvas.drawPath(box,dash)
-        canvas.save(); canvas.translate((width-plus.intrinsicWidth)/2f,(height-plus.intrinsicHeight)/2f); plus.draw(canvas); canvas.restore()
-    }
-}
-
 /** A small card holding one object found in the photo. */
 @SuppressLint("AppCompatCustomView")
 class ChipButton(context: Context, number: Int, private val thumb: Bitmap) : Button(context) {

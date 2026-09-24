@@ -117,6 +117,11 @@ object Stickers {
     }
     /** Cuts a newly saved object ahead of time, so it appears on the shelf straight away. */
     fun prepare(context: Context, store: ShelfStore, item: Keepsake) { val app=context.applicationContext; pool.execute { try { master(app,store,item) } catch(e: Exception) {} } }
+    /** Forgets a deleted thing's images, in memory and on disk. */
+    fun forget(context: Context, id: String) {
+        memory.snapshot().keys.filter { it.startsWith("$id@") }.forEach { memory.remove(it) }
+        File(File(context.cacheDir,"stickers-v2"),"$id.png").delete()
+    }
     /** Work that belongs on a background thread but not on the photo worker. */
     fun background(work: () -> Unit) = pool.execute { try { work() } catch(e: Exception) {} }
 
