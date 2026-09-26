@@ -6,18 +6,25 @@ import android.content.res.Resources
 import android.graphics.*
 import kotlin.math.*
 
-/** Warm paper, near-black ink and one red for stamps and actions. Colour otherwise comes from the things people keep. */
+/**
+ * Seven bright inks, every one outlined in the same near-black. Red is only for adding and for dates;
+ * the others take turns on books, tape, doodles and the calendar.
+ */
 object Ink {
-    val PAPER=Color.rgb(246,244,238); val SURFACE=Color.WHITE
-    val INK=Color.rgb(28,30,40); val INK_2=Color.rgb(92,96,110); val INK_3=Color.rgb(128,131,142)
-    val LINE=Color.rgb(222,219,210)
-    val ACCENT=Color.rgb(222,82,48); val ACCENT_DARK=Color.rgb(186,60,34)
-    val SUN=Color.rgb(255,224,138); val BLUSH=Color.rgb(249,204,214); val SKY=Color.rgb(203,225,242); val MINT=Color.rgb(199,231,212); val KRAFT=Color.rgb(233,211,175)
+    val PAPER=Color.rgb(255,244,222); val SURFACE=Color.WHITE
+    val INK=Color.rgb(23,24,31); val INK_2=Color.rgb(74,74,82); val INK_3=Color.rgb(120,122,132)
+    val LINE=Color.rgb(222,214,198)
+    val ACCENT=Color.rgb(240,73,46); val ACCENT_DARK=Color.rgb(196,48,24)
+    val SUN=Color.rgb(255,203,61); val BLUSH=Color.rgb(255,158,199); val SKY=Color.rgb(143,211,255); val MINT=Color.rgb(76,203,152)
+    val COBALT=Color.rgb(45,69,214); val KRAFT=Color.rgb(217,179,131)
     fun alpha(color: Int, amount: Float)=Color.argb((amount*255).roundToInt(),Color.red(color),Color.green(color),Color.blue(color))
+    /** [color] mixed toward white by [amount]. */
+    fun light(color: Int, amount: Float)=Color.rgb((Color.red(color)+(255-Color.red(color))*amount).roundToInt(),(Color.green(color)+(255-Color.green(color))*amount).roundToInt(),(Color.blue(color)+(255-Color.blue(color))*amount).roundToInt())
 }
 
-/** One handwritten face for titles; everything people need to read is set in the system sans. */
+/** A fat display face for titles, a handwritten one for anything a person wrote, and the system sans for the rest. */
 class Fonts private constructor(assets: AssetManager) {
+    val display: Typeface=Typeface.createFromAsset(assets,"bagel.ttf")
     val hand: Typeface=Typeface.createFromAsset(assets,"patrick.ttf")
     val sans: Typeface=Typeface.SANS_SERIF
     val medium: Typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
@@ -25,6 +32,8 @@ class Fonts private constructor(assets: AssetManager) {
     companion object {
         @Volatile private var loaded: Fonts?=null
         fun of(context: Context)=loaded ?: synchronized(this) { loaded ?: Fonts(context.applicationContext.assets).also { loaded=it } }
+        /** The display face for drawings made without a context; the app loads the fonts before anything is drawn. */
+        val displayFace: Typeface get()=loaded?.display ?: Typeface.DEFAULT_BOLD
     }
 }
 
