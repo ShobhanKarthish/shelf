@@ -86,6 +86,32 @@ enum class Doodle(private val data: String) {
     val path: Path by lazy { svgPath(data) }
 }
 
+/** Filled doodles in 40-unit boxes: what fills empty space, and what flies out when something good happens. */
+enum class Mark(private val data: String) {
+    STAR("M20 2 L25 14 L38 15 L28 24 L31 37 L20 30 L9 37 L12 24 L2 15 L15 14 Z"),
+    SPARKLE("M20 2 C22 14 26 18 38 20 C26 22 22 26 20 38 C18 26 14 22 2 20 C14 18 18 14 20 2 Z"),
+    HEART("M20 35 C14 31 4 24 4 14 C4 9 8 6 12 6 C16 6 19 8 20 11 C21 8 24 6 28 6 C32 6 36 9 36 14 C36 24 26 31 20 35 Z");
+    val path: Path by lazy { svgPath(data) }
+}
+/** A starburst of [points] spikes around [cx],[cy]. */
+fun burstPath(cx: Float, cy: Float, outer: Float, inner: Float, points: Int=24)=Path().apply {
+    for(i in 0 until points*2) {
+        val a=PI*i/points-PI/2; val r=if(i%2==0) outer else inner
+        val x=cx+(r*cos(a)).toFloat(); val y=cy+(r*sin(a)).toFloat()
+        if(i==0) moveTo(x,y) else lineTo(x,y)
+    }
+    close()
+}
+private val markFill=Paint(Paint.ANTI_ALIAS_FLAG)
+private val markLine=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeJoin=Paint.Join.ROUND; strokeCap=Paint.Cap.ROUND }
+/** [mark] [size] wide, centred on [cx],[cy], filled with [color] and outlined in ink. */
+fun drawMark(c: Canvas, mark: Mark, cx: Float, cy: Float, size: Float, color: Int, angle: Float=0f, alpha: Int=255) {
+    c.save(); c.translate(cx,cy); c.rotate(angle); c.scale(size/40f,size/40f); c.translate(-20f,-20f)
+    markFill.color=color; markFill.alpha=alpha*Color.alpha(color)/255; c.drawPath(mark.path,markFill)
+    markLine.color=Ink.INK; markLine.alpha=alpha; markLine.strokeWidth=2.6f; c.drawPath(mark.path,markLine)
+    c.restore()
+}
+
 /** Line drawings of everyday keepsakes for the welcome screen: drawn, not photographed, so nothing pretends to be yours. */
 enum class Trinket(private val shape: String, private val detail: String) {
     TICKET("M5 15 L43 15 L43 21 C40 21 40 27 43 27 L43 33 L5 33 L5 27 C8 27 8 21 5 21 Z","M33 17 L33 31 M10 21 L27 21 M10 25 L24 25 M10 29 L19 29"),
