@@ -71,3 +71,36 @@ class PopDrawable(fill: Int, private val radius: Float, private val line: Float,
     override fun setColorFilter(filter: ColorFilter?) {}
     @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.TRANSLUCENT
 }
+
+/** Stars, hearts and sparkles thrown out from a point and falling away: the reward for adding something or loving it. */
+object Confetti {
+    private class Piece(val mark: Mark, val color: Int, val dx: Float, val dy: Float, val size: Float, val spin: Float)
+    private val colors=intArrayOf(Ink.SUN,Ink.BLUSH,Ink.MINT,Ink.SKY,Ink.ACCENT,Color.WHITE)
+    /** Throws [count] doodles from [x],[y] in [from]'s own pixels, up to [spread] dp away. */
+    fun burst(from: View, x: Float, y: Float, count: Int=12, spread: Float=110f) {
+        if(!animating || !from.isAttachedToWindow) return
+        val root=from.rootView; val d=from.resources.displayMetrics.density
+        val a=IntArray(2); val r=IntArray(2); from.getLocationInWindow(a); root.getLocationInWindow(r)
+        val ox=a[0]-r[0]+x; val oy=a[1]-r[1]+y
+        val rng=Rng((System.nanoTime() and 0xffff).toInt())
+        val pieces=List(count) { i ->
+            val angle=i*2*PI/count+rng.between(-.3f,.3f); val dist=rng.between(spread*.55f,spread)*d
+            Piece(arrayOf(Mark.STAR,Mark.HEART,Mark.SPARKLE,Mark.STAR)[i%4],colors[i%colors.size],(cos(angle)*dist).toFloat(),(sin(angle)*dist).toFloat(),rng.between(14f,26f)*d,rng.between(-200f,200f))
+        }
+        val layer=object : Drawable() {
+            var t=0f
+            override fun draw(c: Canvas) {
+                val k=1-(1-t)*(1-t); val fall=30*d*t*t
+                val scale=if(t<.55f) .2f+.9f*(t/.55f) else 1.1f-.4f*((t-.55f)/.45f)
+                val alpha=if(t<.55f) 255 else (255*(1-(t-.55f)/.45f)).roundToInt()
+                pieces.forEach { p -> drawMark(c,p.mark,ox+p.dx*k,oy+p.dy*k+fall,p.size*scale,p.color,p.spin*t,alpha.coerceIn(0,255)) }
+            }
+            override fun setAlpha(alpha: Int) {}
+            override fun setColorFilter(filter: ColorFilter?) {}
+            @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.TRANSLUCENT
+        }
+        layer.setBounds(0,0,root.width,root.height)
+        root.overlay.add(layer)
+        tween(800,DecelerateInterpolator(1.2f),update={ layer.t=it; layer.invalidateSelf() },end={ root.overlay.remove(layer) })
+    }
+}
