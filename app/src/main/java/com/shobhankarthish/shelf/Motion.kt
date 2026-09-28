@@ -104,3 +104,77 @@ object Confetti {
         tween(800,DecelerateInterpolator(1.2f),update={ layer.t=it; layer.invalidateSelf() },end={ root.overlay.remove(layer) })
     }
 }
+
+/**
+ * A title in the display face: white, outlined in ink, on a hard shadow. It shrinks to fit its width,
+ * and [pop] drops its letters in one after another.
+ */
+class OutlinedTitle(context: Context, private val face: Typeface, private val sizeSp: Float) : View(context) {
+    private val d=resources.displayMetrics.density
+    private val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface=face; strokeJoin=Paint.Join.ROUND }
+    private var drop=FloatArray(0)
+    var text=""
+        set(value) { field=value; contentDescription=value; drop=FloatArray(value.length) { 1f }; requestLayout(); invalidate() }
+    init { isAccessibilityHeading=true; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_YES }
+    override fun onMeasure(w: Int, h: Int)=setMeasuredDimension(MeasureSpec.getSize(w),(sizeSp*d*1.3f).roundToInt())
+    override fun onDraw(c: Canvas) {
+        if(text.isEmpty()) return
+        // Follows the font size setting, up to what the view's height leaves room for.
+        @Suppress("DEPRECATION") var size=sizeSp*min(resources.displayMetrics.scaledDensity,d*1.15f)
+        paint.textSize=size
+        val room=width-12*d
+        if(paint.measureText(text)>room) { size*=room/paint.measureText(text); paint.textSize=size }
+        val widths=FloatArray(text.length); paint.getTextWidths(text,widths)
+        val total=widths.sum(); val baseline=height/2f-(paint.descent()+paint.ascent())/2
+        val line=size*.09f; val lift=size*.07f
+        for(pass in 0..2) {
+            var x=(width-total)/2
+            text.forEachIndexed { i,ch ->
+                val p=drop[i]
+                if(p>0f) {
+                    c.save(); c.translate(x+widths[i]/2,baseline-(1-p)*26*d); c.rotate(-12*(1-p))
+                    paint.alpha=(p*255).roundToInt().coerceIn(0,255)
+                    when(pass) {
+                        0 -> { paint.style=Paint.Style.FILL_AND_STROKE; paint.strokeWidth=line*2; paint.color=Ink.INK; paint.alpha=(p*255).roundToInt(); c.drawText(ch.toString(),-widths[i]/2+lift,lift,paint) }
+                        1 -> { paint.style=Paint.Style.FILL_AND_STROKE; paint.strokeWidth=line*2; paint.color=Ink.INK; paint.alpha=(p*255).roundToInt(); c.drawText(ch.toString(),-widths[i]/2,0f,paint) }
+                        else -> { paint.style=Paint.Style.FILL; paint.color=Color.WHITE; paint.alpha=(p*255).roundToInt(); c.drawText(ch.toString(),-widths[i]/2,0f,paint) }
+                    }
+                    c.restore()
+                }
+                x+=widths[i]
+            }
+        }
+    }
+    /** Drops the letters in, one after another. */
+    fun pop() {
+        if(!animating) return
+        val n=text.length; drop=FloatArray(n)
+        tween(420L+35L*n,update={ t -> val ms=t*(420+35*n); for(i in 0 until n) drop[i]=spring.getInterpolation(((ms-35*i)/420f).coerceIn(0f,1f)); invalidate() })
+    }
+}
+
+/** A sunburst sticker with a number on it, for how many things a book holds. It spins round to a new number. */
+class BurstBadge(context: Context, private val face: Typeface) : View(context) {
+    private val d=resources.displayMetrics.density
+    private val fill=Paint(Paint.ANTI_ALIAS_FLAG)
+    private val line=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; color=Ink.INK; strokeJoin=Paint.Join.ROUND }
+    private val words=Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign=Paint.Align.CENTER; color=Ink.INK }
+    private var count=0
+    init { rotation=12f; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
+    override fun onDraw(c: Canvas) {
+        val r=min(width,height)/2f; val cx=width/2f; val cy=height/2f
+        val star=burstPath(cx,cy,r-1.5f*d,r*.8f,16)
+        fill.color=Ink.SUN; c.drawPath(star,fill); line.strokeWidth=2.2f*d; c.drawPath(star,line)
+        words.typeface=face; words.textSize=r*.62f; c.drawText(count.toString(),cx,cy+r*.12f,words)
+        words.typeface=Typeface.DEFAULT_BOLD; words.textSize=r*.27f; c.drawText(if(count==1) "thing" else "things",cx,cy+r*.45f,words)
+    }
+    /** Shows [n]; with [spin], the badge whirls round and the number changes halfway. */
+    fun show(n: Int, spin: Boolean) {
+        if(!spin || !animating) { count=n; invalidate(); return }
+        var switched=false
+        tween(600,update={ t ->
+            rotation=keys(t,12f,-170f,372f); scaleX=keys(t,1f,.6f,1f); scaleY=scaleX
+            if(!switched && t>.45f) { switched=true; count=n; invalidate() }
+        },end={ rotation=12f; scaleX=1f; scaleY=1f; count=n; invalidate() })
+    }
+}
