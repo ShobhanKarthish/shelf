@@ -178,3 +178,89 @@ class BurstBadge(context: Context, private val face: Typeface) : View(context) {
         },end={ rotation=12f; scaleX=1f; scaleY=1f; count=n; invalidate() })
     }
 }
+
+/** The desk: cobalt, printed all over with faint stars, hearts and squiggles, like wrapping paper. */
+class DeskBackground(private val d: Float) : Drawable() {
+    private val paint=Paint()
+    private val tile: BitmapShader by lazy {
+        val s=(120*d).roundToInt(); val b=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888); val c=Canvas(b)
+        c.drawColor(Ink.COBALT)
+        drawMark(c,Mark.STAR,16*d,18*d,16*d,Ink.SKY,0f,140)
+        drawMark(c,Mark.SPARKLE,77*d,29*d,14*d,Ink.SUN,0f,140)
+        drawMark(c,Mark.HEART,37*d,79*d,14*d,Ink.BLUSH,0f,140)
+        val p=Paint(Paint.ANTI_ALIAS_FLAG)
+        p.color=Ink.alpha(Ink.MINT,.6f); c.drawCircle(96*d,88*d,4*d,p)
+        p.color=Ink.alpha(Color.WHITE,.5f); c.drawCircle(52*d,44*d,2.5f*d,p)
+        p.style=Paint.Style.STROKE; p.strokeWidth=2.5f*d; p.strokeCap=Paint.Cap.ROUND; p.color=Ink.alpha(Ink.SKY,.5f)
+        c.drawPath(Path().apply { moveTo(62*d,66*d); for(i in 0 until 4) { val x=62*d+i*7.5f*d; quadTo(x+3.75f*d,(if(i%2==0) 61 else 71)*d,x+7.5f*d,66*d) } },p)
+        BitmapShader(b,Shader.TileMode.REPEAT,Shader.TileMode.REPEAT)
+    }
+    override fun draw(c: Canvas) { paint.shader=tile; c.drawRect(bounds,paint) }
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(filter: ColorFilter?) {}
+    @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.OPAQUE
+}
+
+/** Two-tone checks, for the calendar's wall. */
+class CheckerBackground(private val a: Int, private val b: Int, private val cell: Float) : Drawable() {
+    private val paint=Paint()
+    private val tile: BitmapShader by lazy {
+        val s=(cell*2).roundToInt(); val bm=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888); val c=Canvas(bm)
+        c.drawColor(a); val p=Paint().apply { color=b }; c.drawRect(0f,0f,s/2f,s/2f,p); c.drawRect(s/2f,s/2f,s.toFloat(),s.toFloat(),p)
+        BitmapShader(bm,Shader.TileMode.REPEAT,Shader.TileMode.REPEAT)
+    }
+    override fun draw(c: Canvas) { paint.shader=tile; c.drawRect(bounds,paint) }
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(filter: ColorFilter?) {}
+    @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.OPAQUE
+}
+
+/** Sunshine: yellow, with rays fanning out from behind a thing, so it sits in its own spotlight. [centerY] is in pixels. */
+class RaysBackground(var centerY: Float) : Drawable() {
+    private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+    override fun draw(c: Canvas) {
+        val b=bounds; c.drawColor(Ink.SUN)
+        val cx=b.exactCenterX(); val r=hypot(b.width().toFloat(),b.height().toFloat())
+        paint.color=Color.rgb(255,219,114)
+        val rays=Path()
+        for(i in 0 until 18) {
+            val a0=Math.toRadians(i*20.0); val a1=Math.toRadians(i*20.0+10)
+            rays.moveTo(cx,centerY); rays.lineTo(cx+(r*cos(a0)).toFloat(),centerY+(r*sin(a0)).toFloat()); rays.lineTo(cx+(r*cos(a1)).toFloat(),centerY+(r*sin(a1)).toFloat()); rays.close()
+        }
+        c.drawPath(rays,paint)
+    }
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(filter: ColorFilter?) {}
+    @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.OPAQUE
+}
+
+/** Blue rules across a card, like a page of a notebook, [every] pixels apart. */
+class RuledLines(private val every: Float, private val first: Float, private val lift: Float) : Drawable() {
+    private val paint=Paint().apply { color=Color.rgb(207,227,255) }
+    override fun draw(c: Canvas) {
+        val b=bounds; var y=b.top+first+every
+        while(y<b.bottom-lift-8) { c.drawRect(b.left+lift,y,b.right-2*lift,y+max(1f,every/28f),paint); y+=every }
+    }
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(filter: ColorFilter?) {}
+    @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.TRANSLUCENT
+}
+
+/** A star that's white when off and red when on; [spin] whirls it round as it changes. */
+class StarDrawable(private val size: Int) : Drawable() {
+    var on=false
+        set(value) { field=value; invalidateSelf() }
+    private var turn=0f; private var grow=1f
+    init { setBounds(0,0,size,size) }
+    override fun draw(c: Canvas) {
+        c.save(); c.scale(grow,grow,bounds.exactCenterX(),bounds.exactCenterY())
+        drawMark(c,Mark.STAR,bounds.exactCenterX(),bounds.exactCenterY(),size.toFloat(),if(on) Ink.ACCENT else Color.WHITE,turn)
+        c.restore()
+    }
+    fun spin()=tween(520,update={ t -> turn=144f*t; grow=keys(t,1f,1.8f,1f); invalidateSelf() },end={ turn=0f; grow=1f; invalidateSelf() })
+    override fun getIntrinsicWidth()=size
+    override fun getIntrinsicHeight()=size
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(filter: ColorFilter?) {}
+    @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.TRANSLUCENT
+}
