@@ -34,7 +34,7 @@ class ShelfTest : AndroidTestCase() {
 
         val placed=Placement(100f,200f,5f,150f,2)
         db.place(object1.id,placed); assertEquals(placed,db.find(object1.id)!!.place)
-        val home=db.addBook("Home",Paper.CORK)
+        val home=db.addBook("Home",Paper.CHECKER)
         db.update(object1.id,"Shell","",home.id)
         val moved=db.find(object1.id)!!
         assertEquals(home.id,moved.book); assertEquals("Shell",moved.title); assertNull(moved.place) // A new book, a new place.

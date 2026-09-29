@@ -10,200 +10,158 @@ import kotlin.math.*
 /*
  * The scrapbook's vocabulary. Each thing means one thing everywhere:
  * a book's name is cut-out letters, a thing's name is a kraft tag, a story is a note in blue pen,
- * a date is a red stamp, and flat paper is held by tape (or a pin, on cork).
- * Everything here draws in page units: one unit is 1/360 of a page's width, so callers scale the canvas first.
+ * a date is a red stamp, flat paper is held by tape, and doodles only ever fill empty space.
+ * Anything you can touch has an ink outline and a hard shadow, like a sticker lifted off the page.
+ * Most of this draws in page units: one unit is 1/360 of a page's width, so callers scale the canvas first.
  */
-
-/** The paper a book is made of. It is the only thing a book chooses. */
-enum class Paper(val label: String, val ground: Int) {
-    GRID("Grid", Color.rgb(250,248,242)),
-    DOTS("Dots", Color.rgb(251,250,246)),
-    LINED("Lined", Color.rgb(253,252,248)),
-    PLAIN("Plain", Color.rgb(251,250,246)),
-    CORK("Cork", Color.rgb(198,148,89));
-    /** Words on cork are white, notes go on paper slips, and photos are pinned instead of taped. */
-    val dark get()=this==CORK
-    companion object { fun of(name: String?)=entries.firstOrNull { it.name==name } ?: GRID }
-}
 
 /**
- * Paper grain, made once from noise on a background thread and stretched or tiled over pages, covers and the
- * calendar. Until it's ready, paper is drawn without grain rather than making anyone wait.
+ * A book's pattern, in one of the inks. It's the one thing that changes from book to book: bold on the cover,
+ * paler on every page inside, so the things stuck there stay easy to see.
  */
-object Textures {
-    @Volatile var crumple: Bitmap?=null; private set
-    @Volatile var cork: Bitmap?=null; private set
-    @Volatile var corkShade: Bitmap?=null; private set
-    @Volatile var linen: Bitmap?=null; private set
-    private val waiting=ArrayList<() -> Unit>()
-    @Volatile private var started=false
-    /** Makes the textures once; [ready] runs on the main thread when they exist (straight away if they already do). */
-    fun warm(ready: () -> Unit={}) {
-        if(linen!=null) { ready(); return }
-        synchronized(waiting) { waiting+=ready }
-        if(started) return
-        started=true
-        Stickers.background {
-            crumple=crumpled(120,256,11); cork=specks(160,9); corkShade=blotches(64,136,5); linen=linen(96,4)
-            android.os.Handler(android.os.Looper.getMainLooper()).post { val all=synchronized(waiting) { waiting.toList().also { waiting.clear() } }; all.forEach { it() } }
-        }
-    }
-
-    /** Smooth value noise over a [cols]×[rows] lattice that wraps, so tiles meet without seams. */
-    private class Lattice(val cols: Int, val rows: Int, seed: Int) {
-        private val v=FloatArray(cols*rows).also { val r=Rng(seed); for(i in it.indices) it[i]=r.next() }
-        fun at(x: Float, y: Float): Float {
-            val x0=floor(x).toInt(); val y0=floor(y).toInt(); val fx=x-x0; val fy=y-y0
-            val sx=fx*fx*(3-2*fx); val sy=fy*fy*(3-2*fy)
-            val i0=Math.floorMod(x0,cols); val i1=(i0+1)%cols; val j0=Math.floorMod(y0,rows); val j1=(j0+1)%rows
-            val a=v[j0*cols+i0]; val b=v[j0*cols+i1]; val c=v[j1*cols+i0]; val d=v[j1*cols+i1]
-            return a+(b-a)*sx+(c-a)*sy+(a-b-c+d)*sx*sy
-        }
-    }
-    private fun fbm(layers: Array<Lattice>, x: Float, y: Float): Float {
-        var sum=0f; var amp=.5f; var f=1f; var total=0f
-        for(l in layers) { sum+=l.at(x*f,y*f)*amp; total+=amp; amp*=.5f; f*=2f }
-        return sum/total
-    }
-    /** Creased paper: ridged noise lit from the top left, kept as a dark shadow mask. */
-    private fun crumpled(w: Int, h: Int, seed: Int): Bitmap {
-        val cell=11f; val layers=Array(4) { Lattice(64,64,seed+it) }
-        val height=FloatArray(w*h)
-        for(y in 0 until h) for(x in 0 until w) { val n=fbm(layers,x/cell,y/cell); height[y*w+x]=1-abs(2*n-1) }
-        val lx=-.304f; val ly=-.434f; val lz=.848f; val relief=1.5f; val out=IntArray(w*h)
-        for(y in 0 until h) for(x in 0 until w) {
-            val dx=(height[y*w+min(w-1,x+1)]-height[y*w+max(0,x-1)])*relief
-            val dy=(height[min(h-1,y+1)*w+x]-height[max(0,y-1)*w+x])*relief
-            val shade=max(0f,(-dx*lx-dy*ly+lz)/sqrt(dx*dx+dy*dy+1))
-            out[y*w+x]=Color.argb(((1-shade)*.26f*255).roundToInt().coerceIn(0,255),28,24,18)
-        }
-        return Bitmap.createBitmap(out,w,h,Bitmap.Config.ARGB_8888)
-    }
-    private fun specks(size: Int, seed: Int): Bitmap {
-        val r=Rng(seed); val out=IntArray(size*size)
-        for(i in out.indices) { val v=r.next(); out[i]=when { v<.11f -> Color.argb((110+r.next()*100).toInt(),92,54,20); v>.945f -> Color.argb((110+r.next()*110).toInt(),237,199,140); else -> 0 } }
-        return Bitmap.createBitmap(out,size,size,Bitmap.Config.ARGB_8888)
-    }
-    private fun blotches(w: Int, h: Int, seed: Int): Bitmap {
-        val layers=Array(2) { Lattice(32,32,seed+it) }; val out=IntArray(w*h)
-        for(y in 0 until h) for(x in 0 until w) out[y*w+x]=Color.argb(((1.6f*fbm(layers,x/6f,y/6f)-.7f).coerceIn(0f,1f)*.35f*255).roundToInt(),115,71,31)
-        return Bitmap.createBitmap(out,w,h,Bitmap.Config.ARGB_8888)
-    }
-    /** Fine threads running down the cover, repeating every [size] pixels. */
-    private fun linen(size: Int, seed: Int): Bitmap {
-        val fine=Lattice(size,size/12,seed); val coarse=Lattice(size/2,size/24,seed+1); val out=IntArray(size*size)
-        for(y in 0 until size) for(x in 0 until size) {
-            val n=fine.at(x.toFloat(),y/12f)*.6f+coarse.at(x/2f,y/24f)*.4f
-            out[y*size+x]=Color.argb(((1.4f*n-.4f).coerceIn(0f,1f)*.25f*255).roundToInt(),115,89,51)
-        }
-        return Bitmap.createBitmap(out,size,size,Bitmap.Config.ARGB_8888)
+enum class Paper(val label: String, val ink: Int) {
+    GRID("Grid", Ink.COBALT),
+    DOTS("Dots", Ink.SUN),
+    STRIPES("Stripes", Ink.BLUSH),
+    CHECKER("Checker", Ink.SKY),
+    GINGHAM("Gingham", Ink.MINT);
+    /** The page colour under the pattern. */
+    val ground get()=Ink.PAPER
+    companion object {
+        /** Papers from before the patterns were named this way become the nearest pattern. */
+        fun of(name: String?)=when(name) { "LINED" -> STRIPES; "PLAIN" -> GINGHAM; "CORK" -> CHECKER; else -> entries.firstOrNull { it.name==name } ?: GRID }
     }
 }
 
 private val groundPaint=Paint()
-private val grainPaint=Paint(Paint.FILTER_BITMAP_FLAG)
-private val rulings=HashMap<Paper,BitmapShader>()
-private var rulingDensity=0f
-private fun ruling(paper: Paper, d: Float): BitmapShader? {
-    if(rulingDensity!=d) { rulings.clear(); rulingDensity=d }
-    if(paper==Paper.PLAIN || paper==Paper.CORK) return null
-    return rulings.getOrPut(paper) {
-        val p=Paint(Paint.ANTI_ALIAS_FLAG)
-        val tile=when(paper) {
-            Paper.GRID -> Bitmap.createBitmap((16*d).roundToInt(),(16*d).roundToInt(),Bitmap.Config.ARGB_8888).also { b ->
-                p.color=Color.rgb(228,224,214); Canvas(b).apply { drawRect(0f,0f,b.width.toFloat(),max(1f,d),p); drawRect(0f,0f,max(1f,d),b.height.toFloat(),p) } }
-            Paper.DOTS -> Bitmap.createBitmap((16*d).roundToInt(),(16*d).roundToInt(),Bitmap.Config.ARGB_8888).also { b ->
-                p.color=Color.rgb(203,197,184); Canvas(b).drawCircle(b.width/2f,b.height/2f,1.1f*d,p) }
-            else -> Bitmap.createBitmap(4,(24*d).roundToInt(),Bitmap.Config.ARGB_8888).also { b ->
-                p.color=Color.rgb(211,225,236); Canvas(b).drawRect(0f,b.height-max(1f,d),4f,b.height.toFloat(),p) }
+private val patterns=HashMap<String,BitmapShader>()
+private var patternDensity=0f
+/** A repeating tile of [paper]'s pattern: [cover] is the bold version for the outside of the book. */
+private fun pattern(paper: Paper, cover: Boolean, d: Float): BitmapShader {
+    if(patternDensity!=d) { patterns.clear(); patternDensity=d }
+    return patterns.getOrPut("${paper.name}$cover") {
+        val p=Paint(Paint.ANTI_ALIAS_FLAG); val ink=paper.ink
+        fun tile(size: Float, draw: Canvas.(Float) -> Unit)=Bitmap.createBitmap((size*d).roundToInt(),(size*d).roundToInt(),Bitmap.Config.ARGB_8888).also { b -> Canvas(b).draw(b.width.toFloat()) }
+        val bitmap=when(paper) {
+            Paper.GINGHAM -> tile(if(cover) 28f else 32f) { s ->
+                drawColor(if(cover) Color.WHITE else Ink.PAPER); p.color=Ink.alpha(ink,if(cover) .55f else .26f)
+                drawRect(0f,0f,s,s/2,p); drawRect(0f,0f,s/2,s,p) }
+            Paper.DOTS -> tile(if(cover) 16f else 22f) { s ->
+                drawColor(if(cover) ink else Ink.PAPER); p.color=if(cover) Ink.INK else Ink.alpha(ink,.8f)
+                drawCircle(s/2,s/2,(if(cover) 2.3f else 3f)*d,p) }
+            Paper.STRIPES -> tile(if(cover) 24f else 32f) { s ->
+                drawColor(if(cover) Color.WHITE else Ink.PAPER); p.color=if(cover) ink else Ink.alpha(ink,.3f); drawRect(0f,0f,s/2,s,p) }
+            Paper.CHECKER -> tile(if(cover) 28f else 32f) { s ->
+                drawColor(if(cover) Color.WHITE else Ink.PAPER); p.color=if(cover) ink else Ink.alpha(ink,.35f)
+                drawRect(0f,0f,s/2,s/2,p); drawRect(s/2,s/2,s,s,p) }
+            Paper.GRID -> tile(if(cover) 18f else 16f) { s ->
+                drawColor(if(cover) Ink.light(Ink.SKY,.55f) else Ink.PAPER); p.color=Ink.alpha(ink,if(cover) .7f else .2f)
+                val w=(if(cover) 2f else 1.2f)*d; drawRect(0f,0f,s,w,p); drawRect(0f,0f,w,s,p) }
         }
-        BitmapShader(tile,Shader.TileMode.REPEAT,Shader.TileMode.REPEAT)
+        BitmapShader(bitmap,Shader.TileMode.REPEAT,Shader.TileMode.REPEAT)
     }
 }
-private var corkShader: BitmapShader?=null
-private var linenShader: BitmapShader?=null
-
-/** Fills [rect] with [paper]: its colour, its ruling, then its grain. The canvas is in pixels; [d] is the screen density. */
-fun drawPaper(c: Canvas, paper: Paper, rect: RectF, d: Float, grain: Float=1f) {
-    groundPaint.shader=null; groundPaint.color=paper.ground; c.drawRect(rect,groundPaint)
-    ruling(paper,d)?.let { groundPaint.shader=it; c.drawRect(rect,groundPaint); groundPaint.shader=null }
-    if(grain<=0f) return
-    grainPaint.alpha=(grain*255).roundToInt()
-    if(paper==Paper.CORK) {
-        val specks=Textures.cork ?: return; val shade=Textures.corkShade ?: return
-        val shader=corkShader ?: BitmapShader(specks,Shader.TileMode.REPEAT,Shader.TileMode.REPEAT).also { corkShader=it }
-        shader.setLocalMatrix(Matrix().apply { setScale(d*.55f,d*.55f) })
-        grainPaint.shader=shader; c.drawRect(rect,grainPaint); grainPaint.shader=null
-        c.drawBitmap(shade,null,rect,grainPaint)
-    } else Textures.crumple?.let { c.drawBitmap(it,null,rect,grainPaint) }
+/** Fills [rect] with a page of [paper]. The canvas is in pixels; [d] is the screen density. */
+fun drawPaper(c: Canvas, paper: Paper, rect: RectF, d: Float) {
+    groundPaint.shader=pattern(paper,false,d); c.drawRect(rect,groundPaint); groundPaint.shader=null
 }
-/** The linen of a book cover. */
-fun drawLinen(c: Canvas, rect: RectF, d: Float) {
-    val tile=Textures.linen ?: return
-    val shader=linenShader ?: BitmapShader(tile,Shader.TileMode.REPEAT,Shader.TileMode.REPEAT).also { linenShader=it }
-    shader.setLocalMatrix(Matrix().apply { setScale(d*.6f,d*.6f) })
-    grainPaint.alpha=255; grainPaint.shader=shader; c.drawRect(rect,grainPaint); grainPaint.shader=null
+/** Fills [shape] with the bold pattern of [paper]'s cover. The canvas is in pixels. */
+fun drawCoverPattern(c: Canvas, paper: Paper, shape: Path, d: Float) {
+    groundPaint.shader=pattern(paper,true,d); c.drawPath(shape,groundPaint); groundPaint.shader=null
 }
 
-/** Ink colours beyond the base palette: the desk the books sit on, and the pen everything is written in. */
-object Pen { val DESK=Color.rgb(38,43,61); val BLUE=Color.rgb(47,85,164); val STRING=Color.rgb(138,122,98) }
+/** Ink colours beyond the base palette: the desk the books sit on, the pen everything is written in, and the string tags hang from. */
+object Pen { val DESK=Ink.COBALT; val BLUE=Color.rgb(45,69,214); val STRING=Color.rgb(138,122,98) }
 
 private val fillPaint=Paint(Paint.ANTI_ALIAS_FLAG)
 private val strokePaint=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeCap=Paint.Cap.ROUND; strokeJoin=Paint.Join.ROUND }
 private val textPaint=TextPaint(Paint.ANTI_ALIAS_FLAG)
 
+/**
+ * A rounded card in the house style: [fill] outlined in ink, standing on a hard ink shadow [lift] below and to the right.
+ * [rect] is the card itself; the shadow falls outside it.
+ */
+fun drawPop(c: Canvas, rect: RectF, radius: Float, fill: Int, line: Float, lift: Float) {
+    fillPaint.shader=null
+    if(lift>0f) { fillPaint.color=Ink.INK; c.drawRoundRect(rect.left+lift,rect.top+lift,rect.right+lift,rect.bottom+lift,radius,radius,fillPaint) }
+    fillPaint.color=fill; c.drawRoundRect(rect,radius,radius,fillPaint)
+    strokePaint.color=Ink.INK; strokePaint.strokeWidth=line; strokePaint.pathEffect=null
+    c.drawRoundRect(rect.left+line/2,rect.top+line/2,rect.right-line/2,rect.bottom-line/2,max(0f,radius-line/2),max(0f,radius-line/2),strokePaint)
+}
+
+private val maskPaint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { colorFilter=PorterDuffColorFilter(Ink.INK,PorterDuff.Mode.SRC_IN) }
+private val bitmapPaint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+private val ROUND=Array(8) { i -> val a=i*PI/4; floatArrayOf(cos(a).toFloat(),sin(a).toFloat()) }
+/**
+ * A sticker or print [b] in [dst]: traced in ink [line] wide around its own edge, standing on a hard shadow [lift] away.
+ * The sticker's white border is already part of the bitmap.
+ */
+fun drawCutout(c: Canvas, b: Bitmap, dst: RectF, line: Float, lift: Float, alpha: Int=255) {
+    if(lift>0f) { maskPaint.alpha=alpha*90/255; c.save(); c.translate(lift,lift*1.25f); c.drawBitmap(b,null,dst,maskPaint); c.restore() }
+    if(line>0f) {
+        maskPaint.alpha=alpha
+        for(o in ROUND) { c.save(); c.translate(o[0]*line,o[1]*line); c.drawBitmap(b,null,dst,maskPaint); c.restore() }
+    }
+    bitmapPaint.alpha=alpha; c.drawBitmap(b,null,dst,bitmapPaint)
+}
+
+/** Fat display words in white, outlined in ink and standing on a hard ink shadow, centred on [cx] with the baseline at [y]. */
+fun drawOutlined(c: Canvas, text: String, cx: Float, y: Float, size: Float, face: Typeface, fill: Int=Color.WHITE) {
+    textPaint.reset(); textPaint.isAntiAlias=true; textPaint.letterSpacing=0f; textPaint.typeface=face; textPaint.textSize=size; textPaint.textAlign=Paint.Align.CENTER
+    val line=size*.09f; val lift=size*.07f
+    textPaint.style=Paint.Style.FILL_AND_STROKE; textPaint.strokeWidth=line*2; textPaint.strokeJoin=Paint.Join.ROUND; textPaint.color=Ink.INK
+    c.drawText(text,cx+lift,y+lift,textPaint); c.drawText(text,cx,y,textPaint)
+    textPaint.style=Paint.Style.FILL; textPaint.color=fill; c.drawText(text,cx,y,textPaint)
+    textPaint.textAlign=Paint.Align.LEFT
+}
+
 /** A strip of washi tape centred on [cx],[cy]. Four kinds, chosen by [kind]. */
 fun drawTape(c: Canvas, cx: Float, cy: Float, width: Float, angle: Float, kind: Int) {
     c.save(); c.translate(cx,cy); c.rotate(angle)
-    val (a,b)=when(Math.floorMod(kind,4)) { 0 -> Color.rgb(255,224,138) to Color.rgb(255,213,107); 1 -> Color.rgb(203,225,242) to Color.rgb(184,213,236); 2 -> Ink.BLUSH to Ink.BLUSH; else -> Ink.MINT to Color.rgb(178,220,195) }
+    val (a,b)=when(Math.floorMod(kind,4)) { 0 -> Ink.SUN to Ink.light(Ink.SUN,.45f); 1 -> Ink.SKY to Ink.light(Ink.SKY,.45f); 2 -> Ink.BLUSH to Ink.light(Ink.BLUSH,.4f); else -> Ink.MINT to Ink.light(Ink.MINT,.45f) }
     fillPaint.shader=when(Math.floorMod(kind,4)) {
-        0 -> LinearGradient(0f,0f,8.5f,-8.5f,intArrayOf(a,a,b,b),floatArrayOf(0f,.5f,.5f,1f),Shader.TileMode.REPEAT)
+        0 -> LinearGradient(0f,0f,16f,0f,intArrayOf(a,a,b,b),floatArrayOf(0f,.5f,.5f,1f),Shader.TileMode.REPEAT)
         1 -> LinearGradient(0f,0f,10f,0f,intArrayOf(a,a,b,b),floatArrayOf(0f,.5f,.5f,1f),Shader.TileMode.REPEAT)
-        3 -> LinearGradient(0f,0f,-5.7f,-5.7f,intArrayOf(a,a,b,b),floatArrayOf(0f,.5f,.5f,1f),Shader.TileMode.REPEAT)
-        else -> null
+        2 -> LinearGradient(0f,0f,9.9f,-9.9f,intArrayOf(a,a,b,b),floatArrayOf(0f,.5f,.5f,1f),Shader.TileMode.REPEAT)
+        else -> LinearGradient(0f,0f,-8.5f,-8.5f,intArrayOf(a,a,b,b),floatArrayOf(0f,.5f,.5f,1f),Shader.TileMode.REPEAT)
     }
-    fillPaint.color=a; fillPaint.alpha=230
-    c.drawRect(-width/2,-9f,width/2,9f,fillPaint)
+    fillPaint.color=a; fillPaint.alpha=235
+    c.drawRect(-width/2,-10f,width/2,10f,fillPaint)
     fillPaint.shader=null; fillPaint.alpha=255
     c.restore()
 }
-/** A red pushpin with its point at [cx],[cy]. */
-fun drawPin(c: Canvas, cx: Float, cy: Float) {
-    fillPaint.shader=null; fillPaint.color=Color.argb(90,0,0,0); c.drawCircle(cx+2f,cy+3f,7.5f,fillPaint)
-    fillPaint.shader=RadialGradient(cx,cy,7.5f,intArrayOf(Color.rgb(224,69,42),Color.rgb(224,69,42),Color.rgb(168,42,22)),floatArrayOf(0f,.6f,1f),Shader.TileMode.CLAMP)
-    c.drawCircle(cx,cy,7.5f,fillPaint); fillPaint.shader=null
-    fillPaint.color=Color.WHITE; c.drawCircle(cx-2f,cy-2.5f,1.5f,fillPaint)
-}
-/** Tape on paper, a pin on cork: how a flat thing [w] wide is held at its top edge. */
-fun drawFastener(c: Canvas, paper: Paper, w: Float, seed: Int) {
+/** Tape across the top edge of a flat thing [w] wide. */
+fun drawFastener(c: Canvas, w: Float, seed: Int) {
     val r=Rng(seed)
-    if(paper.dark) drawPin(c,w/2,3f) else drawTape(c,w/2+r.between(-10f,10f),0f,54f,r.between(-8f,8f),(r.next()*4).toInt())
+    drawTape(c,w/2+r.between(-10f,10f),0f,58f,r.between(-12f,12f),(r.next()*4).toInt())
 }
 
-private fun stampPaint(): TextPaint=textPaint.apply { reset(); isAntiAlias=true; typeface=Typeface.create(Typeface.MONOSPACE,Typeface.BOLD); textSize=11f; letterSpacing=.12f; color=Ink.ACCENT }
-fun stampWidth(text: String)=stampPaint().measureText(text)+16f+3.4f
-/** A red date stamp with its top-left corner at [left],[top]; on cork it is stamped onto a paper slip. */
-fun drawStamp(c: Canvas, text: String, left: Float, top: Float, angle: Float, slip: Boolean) {
-    val p=stampPaint(); val w=stampWidth(text); val h=11f+12f+3.4f
-    c.save(); c.rotate(angle,left+w/2,top+h/2)
-    if(slip) { fillPaint.color=Color.rgb(255,253,246); c.drawRoundRect(left,top,left+w,top+h,4f,4f,fillPaint) }
-    strokePaint.color=Ink.ACCENT; strokePaint.alpha=225; strokePaint.strokeWidth=1.7f; strokePaint.shader=null
-    c.drawRoundRect(left+.85f,top+.85f,left+w-.85f,top+h-.85f,4f,4f,strokePaint)
-    p.alpha=225; c.drawText(text,left+9.7f,top+h/2-(p.descent()+p.ascent())/2,p)
-    c.restore(); strokePaint.alpha=255
+private fun stampPaint(): TextPaint=textPaint.apply { reset(); isAntiAlias=true; typeface=Typeface.create(Typeface.MONOSPACE,Typeface.BOLD); textSize=12f; letterSpacing=.12f; color=Ink.ACCENT }
+fun stampWidth(text: String)=stampPaint().measureText(text)+18f+6f
+const val STAMP_HEIGHT=12f+12f+6f
+/** A red date stamp with its top-left corner at [left],[top], ringed twice like a rubber stamp. */
+fun drawStamp(c: Canvas, text: String, left: Float, top: Float, angle: Float, punch: Float=1f) {
+    val p=stampPaint(); val w=stampWidth(text); val h=STAMP_HEIGHT
+    c.save(); c.rotate(angle,left+w/2,top+h/2); c.scale(punch,punch,left+w/2,top+h/2)
+    fillPaint.shader=null; fillPaint.color=Color.argb(110,255,255,255); c.drawRoundRect(left,top,left+w,top+h,6f,6f,fillPaint)
+    strokePaint.color=Ink.ACCENT; strokePaint.strokeWidth=2.2f; strokePaint.shader=null; strokePaint.pathEffect=null
+    c.drawRoundRect(left+1.1f,top+1.1f,left+w-1.1f,top+h-1.1f,6f,6f,strokePaint)
+    strokePaint.strokeWidth=1.2f; c.drawRoundRect(left+4.5f,top+4.5f,left+w-4.5f,top+h-4.5f,3f,3f,strokePaint)
+    c.drawText(text,left+12f,top+h/2-(p.descent()+p.ascent())/2,p)
+    c.restore()
 }
 
 /** The string from a thing to its tag. */
-fun drawString(c: Canvas, path: Path) { strokePaint.color=Pen.STRING; strokePaint.strokeWidth=1.3f; strokePaint.shader=null; c.drawPath(path,strokePaint) }
+fun drawString(c: Canvas, path: Path) { strokePaint.color=Pen.STRING; strokePaint.strokeWidth=1.4f; strokePaint.shader=null; strokePaint.pathEffect=null; c.drawPath(path,strokePaint) }
 
 /**
  * A kraft name tag, like the one in the app icon. [anchorX] is the end with the hole; with [holeRight] the tag
- * hangs to the left of it. Long names are shortened to fit [maxWidth].
+ * hangs to the left of it. Long names are shortened to fit.
  */
 fun drawTag(c: Canvas, name: String, anchorX: Float, top: Float, angle: Float, hand: Typeface, big: Boolean=false, holeRight: Boolean=false) {
-    val h=if(big) 36f else 26f; val size=if(big) 25f else 17f; val notch=if(big) 13f else 10f
-    val holePad=if(big) 22f else 17f; val endPad=if(big) 16f else 11f; val maxWidth=if(big) 250f else 170f
-    textPaint.reset(); textPaint.isAntiAlias=true; textPaint.typeface=hand; textPaint.textSize=size; textPaint.color=Ink.INK
+    val h=if(big) 38f else 28f; val size=if(big) 25f else 18f; val notch=if(big) 14f else 11f
+    val holePad=if(big) 24f else 19f; val endPad=if(big) 16f else 11f; val maxWidth=if(big) 250f else 170f
+    textPaint.reset(); textPaint.isAntiAlias=true; textPaint.letterSpacing=0f; textPaint.typeface=hand; textPaint.textSize=size; textPaint.color=Ink.INK
     val text=TextUtils.ellipsize(name,textPaint,maxWidth-holePad-endPad,TextUtils.TruncateAt.END).toString()
     val w=textPaint.measureText(text)+holePad+endPad
     c.save(); c.translate(anchorX,top); c.rotate(angle)
@@ -213,29 +171,23 @@ fun drawTag(c: Canvas, name: String, anchorX: Float, top: Float, angle: Float, h
         else { moveTo(notch,0f); lineTo(w,0f); lineTo(w,h); lineTo(notch,h); lineTo(0f,h/2) }
         close()
     }
-    fillPaint.shader=null; fillPaint.color=Ink.alpha(Ink.INK,.22f); c.save(); c.translate(0f,1.2f); c.drawPath(shape,fillPaint); c.restore()
-    fillPaint.color=Ink.KRAFT; c.drawPath(shape,fillPaint)
-    val holeX=if(holeRight) w-(if(big) 12.5f else 9.5f) else (if(big) 12.5f else 9.5f); val r=if(big) 3.5f else 2.5f
-    fillPaint.color=Color.argb(230,255,255,255); c.drawCircle(holeX,h/2,r,fillPaint)
-    strokePaint.color=Ink.alpha(Ink.INK,.35f); strokePaint.strokeWidth=1f; c.drawCircle(holeX,h/2,r,strokePaint)
+    fillPaint.shader=null; fillPaint.color=Ink.KRAFT; c.drawPath(shape,fillPaint)
+    strokePaint.color=Ink.INK; strokePaint.strokeWidth=2f; strokePaint.pathEffect=null; c.drawPath(shape,strokePaint)
+    val holeX=if(holeRight) w-(if(big) 13f else 10f) else (if(big) 13f else 10f); val r=if(big) 4f else 3f
+    fillPaint.color=Ink.PAPER; c.drawCircle(holeX,h/2,r,fillPaint)
+    strokePaint.strokeWidth=1.4f; c.drawCircle(holeX,h/2,r,strokePaint)
     c.drawText(text,if(holeRight) endPad else holePad,h/2-(textPaint.descent()+textPaint.ascent())/2,textPaint)
     c.restore()
 }
 
-/** A few words in blue pen, wrapped to [width]; on cork they're written on a paper slip so they stay readable. */
-class PenNote(text: String, hand: Typeface, val width: Float, private val alignRight: Boolean, private val slip: Boolean, size: Float=17f) {
+/** A few words in blue pen, wrapped to [width]. */
+class PenNote(text: String, hand: Typeface, val width: Float, private val alignRight: Boolean, size: Float=18f) {
     private val paint=TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface=hand; textSize=size; color=Pen.BLUE }
     private val layout=StaticLayout.Builder.obtain(text,0,text.length,paint,width.roundToInt().coerceAtLeast(1))
         .setAlignment(if(alignRight) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL).setLineSpacing(0f,1.02f).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END).build()
     val height get()=layout.height.toFloat()
     fun draw(c: Canvas, left: Float, top: Float, angle: Float) {
         c.save(); c.translate(left,top); c.rotate(angle,width/2,height/2)
-        if(slip) {
-            var l=Float.MAX_VALUE; var r=0f
-            for(i in 0 until layout.lineCount) { l=min(l,layout.getLineLeft(i)); r=max(r,layout.getLineRight(i)) }
-            fillPaint.shader=null; fillPaint.color=Color.argb(76,0,0,0); c.drawRect(l-9f,-5f+2f,r+9f,height+5f+2f,fillPaint)
-            fillPaint.color=Color.rgb(255,253,246); c.drawRect(l-9f,-5f,r+9f,height+5f,fillPaint)
-        }
         layout.draw(c); c.restore()
     }
 }
@@ -249,64 +201,65 @@ fun snippet(story: String): String {
     return (if(space>12) cut.take(space) else cut)+"…"
 }
 
-/** A book's name cut letter by letter from different papers, like a ransom note. Laid out once, in page units. */
+/** A book's name cut letter by letter from bright paper, each tile outlined and standing on its shadow. Laid out once, in page units. */
 class CutLetters(text: String, size: Float, seed: Int, private val maxWidth: Float) {
-    private class Letter(val ch: String, val look: Int, val size: Float, val px: Float, val py: Float, val angle: Float, val dy: Float) { var x=0f; var y=0f; var w=0f; var h=0f }
+    private class Letter(val ch: String, val look: Int, val angle: Float, val dy: Float) { var x=0f; var y=0f; var w=0f; var h=0f }
     private val letters=ArrayList<Letter>()
+    private val face=Fonts.displayFace
+    private val size=size
     var width=0f; private set
     var height=0f; private set
+    /** How tall the letters are once shrunk to fit [room]. */
+    fun heightIn(room: Float)=height*min(1f,room/max(1f,width))
     init {
-        val r=Rng(seed)
+        val r=Rng(seed); var look=(r.next()*LOOKS.size).toInt()
         val words=text.uppercase().split(Regex("\\s+")).filter { it.isNotEmpty() }.map { word ->
-            word.map { ch -> Letter(ch.toString(),(r.next()*LOOKS.size).toInt().coerceAtMost(LOOKS.size-1),size*(.85f+r.next()*.32f),3f+r.next()*3f,2f+r.next()*3f,(r.next()-.5f)*14f,(r.next()-.5f)*5f) }
+            // Neighbouring letters never share a colour.
+            word.map { ch -> look=(look+1+(r.next()*(LOOKS.size-1)).toInt())%LOOKS.size; Letter(ch.toString(),look,(r.next()-.5f)*10f,(r.next()-.5f)*3f) }
         }
         val rows=ArrayList<MutableList<Letter>>(); var row=ArrayList<Letter>(); var x=0f
         for(word in words) {
-            word.forEach { l -> paintFor(l); l.w=textPaint.measureText(l.ch)+2*l.px; l.h=l.size+2*l.py }
-            val ww=word.sumOf { it.w.toDouble() }.toFloat()+2f*(word.size-1)
+            word.forEach { l -> paint(); l.w=max(textPaint.measureText(l.ch),size*.5f)+size*.5f; l.h=size*1.28f }
+            val ww=word.sumOf { it.w.toDouble() }.toFloat()+3f*(word.size-1)
             if(x>0f && x+ww>maxWidth) { rows+=row; row=ArrayList(); x=0f }
-            word.forEach { l -> l.x=x; x+=l.w+2f; row+=l }
-            x+=9f
+            word.forEach { l -> l.x=x; x+=l.w+3f; row+=l }
+            x+=size*.45f
         }
         if(row.isNotEmpty()) rows+=row
         var y=0f
         for(line in rows) {
             val rh=line.maxOf { it.h }
             line.forEach { it.y=y+rh-it.h; letters+=it }
-            width=max(width,line.last().x+line.last().w); y+=rh+3f
+            width=max(width,line.last().x+line.last().w); y+=rh+5f
         }
-        height=max(0f,y-3f)
+        height=max(0f,y-5f)
     }
-    private fun paintFor(l: Letter): TextPaint=textPaint.apply { reset(); isAntiAlias=true; typeface=LOOKS[l.look].face; textSize=l.size; color=LOOKS[l.look].fg }
-    fun draw(c: Canvas, left: Float, top: Float) {
+    private fun paint(): TextPaint=textPaint.apply { reset(); isAntiAlias=true; letterSpacing=0f; typeface=face; textSize=size }
+    /** Draws the letters with their top-left at [left],[top], shrunk if need be so they're no wider than [room]. */
+    fun draw(c: Canvas, left: Float, top: Float, room: Float=Float.MAX_VALUE) {
+        val fit=min(1f,room/max(1f,width))
+        if(fit<1f) { c.save(); c.translate(left,top); c.scale(fit,fit); draw(c,0f,0f); c.restore(); return }
+        val line=max(1.6f,size*.075f); val lift=max(1.6f,size*.08f)
         for(l in letters) {
             val look=LOOKS[l.look]
             c.save(); c.translate(left+l.x+l.w/2,top+l.y+l.h/2+l.dy); c.rotate(l.angle)
-            fillPaint.shader=null; fillPaint.color=Ink.alpha(Ink.INK,.22f); c.drawRect(-l.w/2,-l.h/2+1.5f,l.w/2,l.h/2+1.8f,fillPaint)
-            fillPaint.color=look.bg; c.drawRect(-l.w/2,-l.h/2,l.w/2,l.h/2,fillPaint)
-            val p=paintFor(l); c.drawText(l.ch,-l.w/2+l.px,-(p.descent()+p.ascent())/2,p)
+            drawPop(c,RectF(-l.w/2,-l.h/2,l.w/2,l.h/2),1.5f,look.first,line,lift)
+            val p=paint(); p.color=look.second; p.textAlign=Paint.Align.CENTER
+            c.drawText(l.ch,0f,-(p.descent()+p.ascent())/2+size*.04f,p); p.textAlign=Paint.Align.LEFT
             c.restore()
         }
     }
-    private class Look(val bg: Int, val fg: Int, val face: Typeface)
     companion object {
-        private val LOOKS by lazy { listOf(
-            Look(Color.WHITE,Ink.INK,Typeface.create(Typeface.SERIF,Typeface.BOLD)),
-            Look(Ink.INK,Color.WHITE,Typeface.create("sans-serif-black",Typeface.NORMAL)),
-            Look(Ink.ACCENT,Color.WHITE,Typeface.create(Typeface.MONOSPACE,Typeface.BOLD)),
-            Look(Ink.SUN,Ink.INK,Typeface.create("sans-serif-condensed",Typeface.BOLD)),
-            Look(Color.rgb(233,211,175),Color.rgb(58,42,20),Typeface.create(Typeface.SERIF,Typeface.NORMAL)),
-            Look(Ink.SKY,Color.rgb(35,64,138),Typeface.create("serif-monospace",Typeface.BOLD)),
-        ) }
+        private val LOOKS by lazy { listOf(Ink.ACCENT to Color.WHITE,Ink.SUN to Ink.INK,Color.WHITE to Ink.INK,Ink.SKY to Ink.INK,Ink.INK to Color.WHITE,Ink.BLUSH to Ink.INK,Ink.MINT to Ink.INK) }
     }
 }
 
 /** A dashed place waiting to be filled, with a line of handwriting in it. */
 fun drawSlot(c: Canvas, rect: RectF, text: String, hand: Typeface, onDark: Boolean) {
-    strokePaint.shader=null; strokePaint.color=if(onDark) Color.argb(128,255,255,255) else Ink.alpha(Ink.INK,.25f); strokePaint.strokeWidth=2f
-    strokePaint.pathEffect=DashPathEffect(floatArrayOf(6f,5f),0f); c.drawRoundRect(rect,22f,22f,strokePaint); strokePaint.pathEffect=null
-    textPaint.reset(); textPaint.isAntiAlias=true; textPaint.typeface=hand; textPaint.textSize=17f; textPaint.color=if(onDark) Color.WHITE else Ink.INK_3; textPaint.textAlign=Paint.Align.CENTER
-    val lines=text.split("\n"); val lh=19.5f; var y=rect.centerY()-lh*(lines.size-1)/2-(textPaint.descent()+textPaint.ascent())/2
+    strokePaint.shader=null; strokePaint.color=if(onDark) Color.argb(160,255,255,255) else Ink.alpha(Ink.INK,.35f); strokePaint.strokeWidth=2.5f
+    strokePaint.pathEffect=DashPathEffect(floatArrayOf(8f,6f),0f); c.drawRoundRect(rect,22f,22f,strokePaint); strokePaint.pathEffect=null
+    textPaint.reset(); textPaint.isAntiAlias=true; textPaint.letterSpacing=0f; textPaint.typeface=hand; textPaint.textSize=19f; textPaint.color=if(onDark) Color.WHITE else Ink.INK_2; textPaint.textAlign=Paint.Align.CENTER
+    val lines=text.split("\n"); val lh=21f; var y=rect.centerY()-lh*(lines.size-1)/2-(textPaint.descent()+textPaint.ascent())/2
     lines.forEach { c.drawText(it,rect.centerX(),y,textPaint); y+=lh }
     textPaint.textAlign=Paint.Align.LEFT
 }
@@ -315,26 +268,9 @@ fun drawSlot(c: Canvas, rect: RectF, text: String, hand: Typeface, onDark: Boole
 fun drawPageEdges(c: Canvas, x: Float, top: Float, bottom: Float, pages: Int, right: Boolean) {
     if(pages<=0) return
     val w=pages*3f+1f; val left=if(right) x-w else x
-    fillPaint.shader=null; fillPaint.color=Color.argb(217,255,255,255); c.drawRect(left,top,left+w,bottom,fillPaint)
-    fillPaint.color=Ink.alpha(Ink.INK,.2f)
+    fillPaint.shader=null; fillPaint.color=Color.WHITE; c.drawRect(left,top,left+w,bottom,fillPaint)
+    fillPaint.color=Ink.alpha(Ink.INK,.45f)
     for(i in 0..pages) { val lx=left+i*3f; c.drawRect(lx,top,lx+1f,bottom,fillPaint) }
-}
-
-/** An uneven torn edge around a [w]×[h] print. */
-fun tornPath(w: Float, h: Float, seed: Int): Path {
-    val r=Rng(seed); val j={ r.next()*3.4f }; val p=Path()
-    p.moveTo(0f,j()); var x=5f
-    while(x<=w) { p.lineTo(x,j()); x+=5f }
-    var y=5f; while(y<=h) { p.lineTo(w-j(),y); y+=5f }
-    x=w-5f; while(x>=0f) { p.lineTo(x,h-j()); x-=5f }
-    y=h-5f; while(y>=0f) { p.lineTo(j(),y); y-=5f }
-    p.close(); return p
-}
-/** Shapes a whole photo can be cut into in the calendar, in a unit box. */
-fun cutShape(kind: Int, size: Float): Path=when(Math.floorMod(kind,3)) {
-    0 -> svgPath("M16 29 C 6 21 0 15 0 8.5 C 0 3.5 4 0 8.5 0 C 12 0 14.5 2 16 4.5 C 17.5 2 20 0 23.5 0 C 28 0 32 3.5 32 8.5 C 32 15 26 21 16 29 Z").apply { transform(Matrix().apply { setScale(size/32f,size/30f) }) }
-    1 -> svgPath("M20 1 C27 1 31 5 34 9 C39 14 40 21 37 28 C34 35 27 39 20 39 C12 39 5 35 2 28 C0 21 1 13 6 8 C10 3 14 1 20 1 Z").apply { transform(Matrix().apply { setScale(size/40f,size/40f) }) }
-    else -> Path().apply { addCircle(size/2,size/2,size/2,Path.Direction.CW) }
 }
 
 private val months=arrayOf("JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC")
