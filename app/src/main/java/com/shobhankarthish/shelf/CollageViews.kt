@@ -8,12 +8,10 @@ import android.graphics.*
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
-import android.graphics.drawable.StateListDrawable
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
-import android.widget.LinearLayout
 import kotlin.math.*
 
 fun pill(color: Int, radius: Float, stroke: Int=0, strokeWidth: Float=0f)=GradientDrawable().apply {
@@ -35,17 +33,17 @@ class DoodleDrawable(private val doodle: Doodle, color: Int, strokeDp: Float, pr
     @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.TRANSLUCENT
 }
 
-/** The one button that moves you forward on each screen: a red pill, easy to find and easy to hit. */
+/** The one button that moves you forward on each screen: a red pill on its shadow, easy to find and easy to hit. */
 @SuppressLint("AppCompatCustomView") // Native Activity/theme; no AppCompat tinting is used.
 class PrimaryButton(context: Context, label: String, icon: Doodle?=null) : Button(context) {
     init {
-        val d=resources.displayMetrics.density; val r=28*d
-        text=label; isAllCaps=false; typeface=Fonts.of(context).medium; setTextSize(TypedValue.COMPLEX_UNIT_SP,16f)
+        val d=resources.displayMetrics.density; val lift=4*d
+        text=label; isAllCaps=false; typeface=Fonts.of(context).display; setTextSize(TypedValue.COMPLEX_UNIT_SP,17f); letterSpacing=.02f
         setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled),intArrayOf()),intArrayOf(Ink.alpha(Color.WHITE,.85f),Color.WHITE)))
-        val shape=StateListDrawable().apply { addState(intArrayOf(-android.R.attr.state_enabled),pill(Ink.alpha(Ink.ACCENT,.38f),r)); addState(intArrayOf(),pill(Ink.ACCENT,r)) }
-        background=RippleDrawable(ColorStateList.valueOf(Ink.alpha(Color.WHITE,.2f)),shape,null)
-        stateListAnimator=null; gravity=Gravity.CENTER; minWidth=0; minimumWidth=0; minHeight=(56*d).roundToInt(); minimumHeight=minHeight
-        setPadding((28*d).roundToInt(),0,(28*d).roundToInt(),0)
+        setShadowLayer(.01f,1.5f*d,1.5f*d,Ink.INK)
+        background=PopDrawable(Ink.ACCENT,30*d,2.5f*d,lift); pressDown(lift)
+        gravity=Gravity.CENTER; minWidth=0; minimumWidth=0; minHeight=(60*d).roundToInt(); minimumHeight=minHeight
+        setPadding((28*d).roundToInt(),0,(28*d+lift).roundToInt(),lift.roundToInt())
         if(icon!=null) { setCompoundDrawablesRelative(DoodleDrawable(icon,Color.WHITE,2.2f,(20*d).roundToInt()),null,null,null); compoundDrawablePadding=(8*d).roundToInt() }
     }
 }
@@ -73,11 +71,9 @@ class IconButton(context: Context, doodle: Doodle, label: String) : Button(conte
     }
 }
 
-/** A sticker or print. [bottom] stands it on its lower edge instead of centring it; a new bitmap fades in. [paper] tapes or pins a print. */
-class StickerView(context: Context, private val angle: Float=0f, private val bottom: Boolean=true, private val paper: Paper?=null) : View(context) {
+/** A sticker or print, outlined in ink on its shadow. [bottom] stands it on its lower edge instead of centring it; a new bitmap fades in. [taped] tapes a print. */
+class StickerView(context: Context, private val angle: Float=0f, private val bottom: Boolean=true, private val taped: Boolean=false) : View(context) {
     private val d=resources.displayMetrics.density
-    private val image=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val shade=Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter=PorterDuffColorFilter(Ink.INK,PorterDuff.Mode.SRC_IN) }
     private var bitmap: Bitmap?=null
     init { importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
     fun show(b: Bitmap?, fade: Boolean) {
@@ -86,13 +82,12 @@ class StickerView(context: Context, private val angle: Float=0f, private val bot
     }
     override fun onDraw(canvas: Canvas) {
         val b=bitmap ?: return
-        val m=4*d; val s=min((width-2*m)/b.width,(height-2*m)/b.height)
+        val m=8*d; val s=min((width-2*m)/b.width,(height-2*m)/b.height)
         val w=b.width*s; val h=b.height*s; val left=(width-w)/2; val top=if(bottom) height-h-m else (height-h)/2
         val dst=RectF(left,top,left+w,top+h)
         canvas.save(); canvas.rotate(angle,dst.centerX(),if(bottom) dst.bottom else dst.centerY())
-        shade.alpha=18; canvas.save(); canvas.translate(0f,3*d); canvas.drawBitmap(b,null,dst,shade); canvas.restore()
-        canvas.drawBitmap(b,null,dst,image)
-        if(paper!=null) { canvas.translate(dst.left,dst.top); canvas.scale(d,d); drawFastener(canvas,paper,dst.width()/d,11) }
+        drawCutout(canvas,b,dst,2*d,4*d)
+        if(taped) { canvas.translate(dst.left,dst.top); canvas.scale(d,d); drawFastener(canvas,dst.width()/d,11) }
         canvas.restore()
     }
 }
