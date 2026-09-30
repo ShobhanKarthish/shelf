@@ -16,12 +16,12 @@ data class Book(val id: String, val name: String, val paper: Paper, val created:
 data class Placement(val x: Float, val y: Float, val angle: Float, val size: Float, val z: Int)
 
 /** [aspect] is the width over height of the thing's sticker or print, so pages can be laid out before any image loads. */
-data class Keepsake(val id: String, val title: String, val story: String, val book: String, val framed: Boolean, val created: Long, val aspect: Float, val place: Placement?=null)
+data class Keepsake(val id: String, val title: String, val story: String, val book: String, val framed: Boolean, val created: Long, val aspect: Float, val place: Placement?=null, val favourite: Boolean=false)
 
-class ShelfStore(private val context: Context, name: String="shelf.db") : SQLiteOpenHelper(context, name, null, 2) {
+class ShelfStore(private val context: Context, name: String="shelf.db") : SQLiteOpenHelper(context, name, null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE objects (id TEXT PRIMARY KEY, title TEXT NOT NULL, story TEXT NOT NULL, shelf TEXT NOT NULL, framed INTEGER NOT NULL, created INTEGER NOT NULL)")
-        onUpgrade(db, 1, 2)
+        onUpgrade(db, 1, 3)
     }
     override fun onUpgrade(db: SQLiteDatabase, old: Int, new: Int) {
         if(old<2) {
@@ -40,6 +40,7 @@ class ShelfStore(private val context: Context, name: String="shelf.db") : SQLite
                 while(c.moveToNext()) db.execSQL("UPDATE objects SET aspect=? WHERE id=?", arrayOf<Any>(aspectOfFile(image(c.getString(0)),c.getInt(1)==1),c.getString(0)))
             }
         }
+        if(old<3) db.execSQL("ALTER TABLE objects ADD COLUMN favourite INTEGER NOT NULL DEFAULT 0")
     }
 
     fun image(id: String)=File(context.filesDir,"$id.png")
@@ -50,7 +51,7 @@ class ShelfStore(private val context: Context, name: String="shelf.db") : SQLite
         buildList { while(c.moveToNext()) add(Book(c.getString(0),c.getString(1),Paper.of(c.getString(2)),c.getLong(3))) }
     }
     /** The book everything starts in, made the first time it is needed. */
-    fun firstBook(): Book=books().firstOrNull() ?: addBook("My first shelf",Paper.GRID)
+    fun firstBook(): Book=books().firstOrNull() ?: addBook("My first shelf",Paper.GINGHAM)
     fun addBook(name: String, paper: Paper): Book {
         require(name.isNotBlank() && name.length<=40)
         val book=Book(UUID.randomUUID().toString(),name.trim(),paper,System.currentTimeMillis())
@@ -67,10 +68,10 @@ class ShelfStore(private val context: Context, name: String="shelf.db") : SQLite
         return gone
     }
 
-    fun all(): List<Keepsake> = readableDatabase.rawQuery("SELECT id,title,story,book,framed,created,aspect,x,y,angle,size,z FROM objects ORDER BY created", null).use { c ->
+    fun all(): List<Keepsake> = readableDatabase.rawQuery("SELECT id,title,story,book,framed,created,aspect,x,y,angle,size,z,favourite FROM objects ORDER BY created", null).use { c ->
         buildList { while(c.moveToNext()) {
             val place=if(c.isNull(7)) null else Placement(c.getFloat(7),c.getFloat(8),c.getFloat(9),c.getFloat(10),c.getInt(11))
-            add(Keepsake(c.getString(0),c.getString(1),c.getString(2),c.getString(3) ?: "",c.getInt(4)==1,c.getLong(5),if(c.isNull(6)) 1f else c.getFloat(6),place))
+            add(Keepsake(c.getString(0),c.getString(1),c.getString(2),c.getString(3) ?: "",c.getInt(4)==1,c.getLong(5),if(c.isNull(6)) 1f else c.getFloat(6),place,c.getInt(12)==1))
         } }
     }
     fun inBook(id: String)=all().filter { it.book==id }
@@ -108,6 +109,7 @@ class ShelfStore(private val context: Context, name: String="shelf.db") : SQLite
             else { put("x",place.x); put("y",place.y); put("angle",place.angle); put("size",place.size); put("z",place.z) }
         },"id=?",arrayOf(id))
     }
+    fun setFavourite(id: String, favourite: Boolean) { writableDatabase.update("objects",ContentValues().apply { put("favourite",if(favourite) 1 else 0) },"id=?",arrayOf(id)) }
     fun delete(id: String) { writableDatabase.delete("objects","id=?",arrayOf(id)); image(id).delete(); photo(id).delete() }
 
     companion object {
