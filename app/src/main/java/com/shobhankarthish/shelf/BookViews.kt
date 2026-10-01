@@ -5,13 +5,8 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.res.ColorStateList
 import android.graphics.*
 import android.graphics.drawable.Drawable
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
-import android.graphics.drawable.ShapeDrawable
-import android.graphics.drawable.shapes.OvalShape
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
@@ -33,41 +28,79 @@ private fun View.perspective(distance: Float) { cameraDistance=distance*resource
 /** Android's rotationY sign that lifts a page toward you as it turns. */
 private const val SWING=-1f
 
-/** A round button: white with an ink icon, see-through when it's the unselected half of a pair, or the red add button. */
+/**
+ * A round button: white with an ink icon, yellow when it's the chosen one of a pair, or the red add button in its sunburst.
+ * Pressed, it sinks onto its shadow; let go, its icon does one small thing that suits it.
+ */
 @SuppressLint("AppCompatCustomView")
 class RoundButton(context: Context, private val doodle: Doodle, label: String, style: Style=Style.WHITE) : Button(context) {
-    enum class Style { WHITE, GLASS, RED }
+    enum class Style { WHITE, ON, RED }
     private val d=resources.displayMetrics.density
     private val icon=Paint(Paint.ANTI_ALIAS_FLAG).apply { this.style=Paint.Style.STROKE; strokeCap=Paint.Cap.ROUND; strokeJoin=Paint.Join.ROUND }
     private val disc=Paint(Paint.ANTI_ALIAS_FLAG)
+    private val line=Paint(Paint.ANTI_ALIAS_FLAG).apply { this.style=Paint.Style.STROKE; color=Ink.INK; strokeJoin=Paint.Join.ROUND }
     var look=style
         set(value) { field=value; invalidate() }
     private var glyph=Path()
+    private var sun=Path()
+    // Where the icon and the sunburst are in their little dance.
+    private var gx=0f; private var gy=0f; private var turn=0f; private var sx=1f; private var sy=1f
+    private var sunTurn=0f; private var sunScale=1f
+    private val hops=FloatArray(3)
+    private val red get()=look==Style.RED
+    private val lift get()=(if(red) 4f else 3f)*d
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        val s=(if(look==Style.RED) 22f else 20f)*d; val cx=w/2f; val cy=h/2f-d
-        glyph=doodlePath(doodle,RectF(cx-s/2,cy-s/2,cx+s/2,cy+s/2))
+        val s=(if(red) 26f else 21f)*d
+        glyph=doodlePath(doodle,RectF(-s/2,-s/2,s/2,s/2))
+        val r=min(w,h)/2f; sun=burstPath(0f,0f,r-2*d,r*.84f,24)
     }
     init {
         text=""; contentDescription=label; stateListAnimator=null; minWidth=0; minimumWidth=0; minHeight=0; minimumHeight=0; setPadding(0,0,0,0)
-        background=null; foreground=RippleDrawable(ColorStateList.valueOf(Ink.alpha(Ink.INK,.14f)),null,ShapeDrawable(OvalShape()))
+        background=null
     }
-    override fun onDraw(canvas: Canvas) {
-        val r=min(width,height)/2f-3*d; val cx=width/2f; val cy=height/2f-d
-        when(look) {
-            Style.GLASS -> { disc.color=Color.argb(26,255,255,255); disc.clearShadowLayer(); canvas.drawCircle(cx,cy,r,disc); icon.color=Color.argb(107,255,255,255); icon.strokeWidth=d; canvas.drawCircle(cx,cy,r-d/2,icon) }
-            Style.RED -> { disc.color=Ink.ACCENT; disc.setShadowLayer(8*d,0f,4*d,Color.argb(110,160,50,20)); canvas.drawCircle(cx,cy,r,disc) }
-            Style.WHITE -> { disc.color=Color.WHITE; disc.setShadowLayer(3*d,0f,1.5f*d,Color.argb(70,28,30,40)); canvas.drawCircle(cx,cy,r,disc) }
+    override fun drawableStateChanged() { super.drawableStateChanged(); invalidate() }
+    override fun onDraw(c: Canvas) {
+        val down=if(isPressed) lift else 0f
+        val cx: Float; val cy: Float; val r: Float
+        if(red) {
+            cx=width/2f; cy=height/2f; r=min(width,height)*.36f
+            c.save(); c.translate(cx,cy); c.rotate(sunTurn); c.scale(sunScale,sunScale)
+            disc.color=Ink.SUN; c.drawPath(sun,disc); line.strokeWidth=2.5f*d; c.drawPath(sun,line); c.restore()
+        } else { cx=(width-lift)/2f; cy=(height-lift)/2f; r=min(width,height)/2f-lift/2-1.5f*d }
+        if(!isPressed) { disc.color=Ink.INK; c.drawCircle(cx+lift,cy+lift,r,disc) }
+        disc.color=when(look) { Style.RED -> Ink.ACCENT; Style.ON -> Ink.SUN; Style.WHITE -> Color.WHITE }
+        c.drawCircle(cx+down,cy+down,r,disc)
+        line.strokeWidth=(if(red) 3f else 2.5f)*d; c.drawCircle(cx+down,cy+down,r-line.strokeWidth/2,line)
+        c.save(); c.translate(cx+down+gx,cy+down+gy); c.rotate(turn); c.scale(sx,sy)
+        icon.color=if(red) Color.WHITE else Ink.INK
+        if(doodle==Doodle.MORE) {
+            disc.color=Ink.INK; for(i in 0..2) c.drawCircle((i-1)*7*d,hops[i],2.4f*d,disc)
+        } else { icon.strokeWidth=(if(red) 3.4f else 2.3f)*d; c.drawPath(glyph,icon) }
+        c.restore()
+    }
+    override fun performClick(): Boolean { flourish(); return super.performClick() }
+    private fun reset() { gx=0f; gy=0f; turn=0f; sx=1f; sy=1f; sunTurn=0f; sunScale=1f; hops.fill(0f); invalidate() }
+    private fun flourish() {
+        if(!moving) return
+        when(doodle) {
+            Doodle.PLUS -> {
+                tween(520,update={ t -> turn=keys(t,0f,45f,90f,90f); sx=keys(t,1f,.8f,1.12f,1f); sy=sx; invalidate() },end={ reset() })
+                tween(700,update={ t -> sunTurn=keys(t,0f,120f,180f); sunScale=keys(t,1f,1.3f,1f); invalidate() })
+                Confetti.burst(this,width/2f,height/2f,14,130f)
+            }
+            Doodle.PREV,Doodle.NEXT,Doodle.BACK -> { val dir=if(doodle==Doodle.NEXT) 1 else -1; tween(300,update={ t -> gx=keys(t,0f,dir*6*d,0f); invalidate() },end={ reset() }) }
+            Doodle.MORE -> tween(460,update={ t -> for(i in 0..2) hops[i]=-6*d*sin(PI*((t*460-i*70)/320f).coerceIn(0f,1f)).toFloat(); invalidate() },end={ reset() })
+            Doodle.PENCIL -> tween(480,update={ t -> turn=keys(t,0f,-18f,10f,-6f,0f); invalidate() },end={ reset() })
+            Doodle.BOOK,Doodle.CALENDAR -> tween(380,update={ t -> gy=keys(t,0f,-7*d,0f); sx=keys(t,1f,1.15f,1f); sy=keys(t,1f,.9f,1f); invalidate() },end={ reset() })
+            else -> tween(260,update={ t -> sx=keys(t,1f,1.2f,1f); sy=sx; invalidate() },end={ reset() })
         }
-        icon.color=if(look==Style.WHITE) Ink.INK else Color.WHITE
-        icon.strokeWidth=(if(doodle==Doodle.MORE) 3f else if(look==Style.RED) 2.4f else 1.8f)*d
-        canvas.drawPath(glyph,icon)
     }
 }
 
 /** How a page's 360-unit collage fits the screen: [k] pixels per unit, with its top-left corner at [ox],[oy]. */
 class PageFit(val k: Float, val ox: Float, val oy: Float)
 fun pageFit(width: Int, height: Int, top: Int, bottom: Int, d: Float): PageFit {
-    val usable=height-top-bottom-(64+84)*d
+    val usable=height-top-bottom-(64+112)*d
     val k=max(.45f*d,min(width/360f,usable/PageLayout.HEIGHT))
     return PageFit(k,(width-360*k)/2,top+64*d)
 }
@@ -80,12 +113,12 @@ object PageLayout {
     fun pages(count: Int)=max(1,(count+PER-1)/PER)
     fun pageOf(indexInBook: Int)=max(0,indexInBook)/PER
     /** Where the first thing starts: under the book's name on the first page, near the top on the others. */
-    fun top(title: CutLetters?)=if(title==null) 12f else title.height+8f
+    fun top(title: CutLetters?)=if(title==null) 24f else title.heightIn(300f)+14f
     fun auto(item: Keepsake, slot: Int, top: Float): Placement {
         val r=Rng(seedOf(item.id)); val s=slots[slot.coerceIn(0,PER-1)]
         return Placement(s[0]+r.between(-10f,10f),top+s[1]+r.between(-10f,10f),r.between(-8f,8f),s[2]*r.between(.92f,1.06f),1)
     }
-    fun title(book: Book)=CutLetters(book.name,28f,seedOf(book.id)+1,230f)
+    fun title(book: Book)=CutLetters(book.name,24f,seedOf(book.id)+1,250f)
 }
 
 /** Width and height of a thing that fits a [size]-unit square. */
@@ -101,10 +134,10 @@ interface ThingHost {
 /**
  * One thing on a page: its sticker or print, the kraft tag on its string, and the start of its story in pen.
  * The view reaches past the sticker ([padLeft] and so on, in page units) to hold the tag, the note and the twist handle,
- * but only a touch on the sticker itself belongs to it.
+ * but only a touch on the sticker itself belongs to it. Tapped, it peels up off the page and its tag swings before it opens.
  */
 @SuppressLint("ViewConstructor") // Made in code with what it shows; never inflated from XML.
-class ThingView(context: Context, val item: Keepsake, var place: Placement, private val paper: Paper, private val k: Float, private val hand: Typeface, private val host: ThingHost) : View(context) {
+class ThingView(context: Context, val item: Keepsake, var place: Placement, private val k: Float, private val hand: Typeface, private val host: ThingHost) : View(context) {
     val w: Float; val h: Float
     val padLeft: Float; val padTop: Float; val padRight: Float; val padBottom: Float
     private val d=resources.displayMetrics.density
@@ -114,31 +147,41 @@ class ThingView(context: Context, val item: Keepsake, var place: Placement, priv
     private val tagAngle=rng.between(-4f,4f)
     private val noteAngle=rng.between(-2.5f,2.5f)
     private val note: PenNote?
-    private val image=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val shade=Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter=PorterDuffColorFilter(Ink.INK,PorterDuff.Mode.SRC_IN); alpha=22 }
-    private val outline=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=1.6f; color=Pen.BLUE }
+    private val outline=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeWidth=2f; color=Pen.BLUE; pathEffect=DashPathEffect(floatArrayOf(6f,4f),0f) }
     private val handle=Paint(Paint.ANTI_ALIAS_FLAG)
-    private val dashes=DashPathEffect(floatArrayOf(5f,4f),0f)
     private val dst=RectF()
     private val twist: Path
     private val string: Path
+    /** How far the tag is swinging on its string, in degrees. */
+    private var swing=0f
+    /** A little wobble while the page is being arranged, so it's clear things can move. */
+    private var wobble=0f
+    private var wobbling: ValueAnimator?=null
     var chosen=false
         set(value) { field=value; invalidate() }
     init {
         val box=boxOf(item.aspect,place.size); w=box.x; h=box.y
-        note=snippet(item.story).takeIf { it.isNotEmpty() }?.let { PenNote(it,hand,max(w,150f),right,paper.dark) }
-        val tag=172f; val noteWidth=note?.width ?: 0f
+        note=snippet(item.story).takeIf { it.isNotEmpty() }?.let { PenNote(it,hand,max(w,150f),right) }
+        val tag=180f; val noteWidth=note?.width ?: 0f
         padTop=HANDLE
         padLeft=maxOf(HANDLE,if(right) tag-w*.64f+4f else 0f,if(right) noteWidth+4f-w else 0f)
         padRight=maxOf(HANDLE,if(right) 0f else w*.36f+tag-w+4f,if(right) 0f else noteWidth+4f-w)
-        padBottom=maxOf(HANDLE,40f+(note?.height?.plus(12f) ?: 0f))
+        padBottom=maxOf(HANDLE,44f+(note?.height?.plus(12f) ?: 0f))
         contentDescription=item.title; isFocusable=true; isClickable=true
         rotation=place.angle
-        val tx=if(right) w*.64f else w*.36f; val ty=h+4f; val hole=if(right) tx-8f else tx+8f
-        string=Path().apply { moveTo(w*.5f,h*.8f); cubicTo(w*.5f,h+2f,hole,ty+2f,hole,ty+13f) }
+        val tx=if(right) w*.64f else w*.36f; val ty=h+4f; val hole=if(right) tx-10f else tx+10f
+        string=Path().apply { moveTo(w*.5f,h*.8f); cubicTo(w*.5f,h+2f,hole,ty+2f,hole,ty+14f) }
         twist=doodlePath(Doodle.ROTATE,RectF(w,-16f,w+16f,0f))
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { pivotX=(padLeft+this.w/2)*k; pivotY=(padTop+this.h/2)*k }
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if(host.arranging && moving) wobbling=ValueAnimator.ofFloat(-1.6f,1.6f).apply {
+            duration=320; repeatMode=ValueAnimator.REVERSE; repeatCount=ValueAnimator.INFINITE; interpolator=AccelerateDecelerateInterpolator()
+            currentPlayTime=(rng.next()*320).toLong(); addUpdateListener { wobble=it.animatedValue as Float; if(!chosen) invalidate() }; start()
+        }
+    }
+    override fun onDetachedFromWindow() { wobbling?.cancel(); wobbling=null; super.onDetachedFromWindow() }
     fun show(b: Bitmap?) { bitmap=b; invalidate() }
     /** Pixel size to load the image at, in steps so neighbouring sizes share the cache. */
     val loadSize get()=((max(w,h)*k/64f).roundToInt()+1)*64
@@ -146,21 +189,18 @@ class ThingView(context: Context, val item: Keepsake, var place: Placement, priv
     override fun onDraw(c: Canvas) {
         c.save(); c.scale(k,k); c.translate(padLeft,padTop)
         drawString(c,string)
+        if(host.arranging && !chosen) c.rotate(wobble,w/2,h/2)
         bitmap?.let { b ->
             val s=min(w/b.width,h/b.height); val bw=b.width*s; val bh=b.height*s
             dst.set((w-bw)/2,(h-bh)/2,(w+bw)/2,(h+bh)/2)
-            c.save(); c.translate(0f,3f); c.drawBitmap(b,null,dst,shade); c.restore()
-            c.drawBitmap(b,null,dst,image)
+            drawCutout(c,b,dst,1.8f,3.5f)
         }
-        if(item.framed) drawFastener(c,paper,w,seedOf(item.id))
-        if(host.arranging) {
-            outline.pathEffect=if(chosen) null else dashes; outline.alpha=if(chosen) 255 else 115
-            c.drawRect(-7f,-7f,w+7f,h+7f,outline)
-            if(chosen) {
-                handle.style=Paint.Style.FILL; handle.color=Color.WHITE; c.drawCircle(w+8f,-8f,16f,handle)
-                handle.style=Paint.Style.STROKE; handle.color=Pen.BLUE; handle.strokeWidth=1.6f; c.drawCircle(w+8f,-8f,16f,handle)
-                handle.strokeCap=Paint.Cap.ROUND; c.drawPath(twist,handle)
-            }
+        if(item.framed) drawFastener(c,w,seedOf(item.id))
+        if(host.arranging && chosen) {
+            c.drawRect(-8f,-8f,w+8f,h+8f,outline)
+            handle.style=Paint.Style.FILL; handle.color=Color.WHITE; c.drawCircle(w+8f,-8f,16f,handle)
+            handle.style=Paint.Style.STROKE; handle.color=Ink.INK; handle.strokeWidth=2f; c.drawCircle(w+8f,-8f,16f,handle)
+            handle.strokeCap=Paint.Cap.ROUND; c.drawPath(twist,handle)
         }
         c.restore()
     }
@@ -168,8 +208,8 @@ class ThingView(context: Context, val item: Keepsake, var place: Placement, priv
     /** The tag and note, drawn by the page above every sticker so a neighbour never hides a name. [c] is already in this thing's units. */
     fun drawLabels(c: Canvas) {
         val tx=if(right) w*.64f else w*.36f; val ty=h+4f
-        drawTag(c,item.title,tx,ty,tagAngle,hand,holeRight=right)
-        note?.draw(c,if(right) w-4f-note.width else 4f,ty+32f,noteAngle)
+        drawTag(c,item.title,tx,ty,tagAngle+swing,hand,holeRight=right)
+        note?.draw(c,if(right) w-4f-note.width else 4f,ty+36f,noteAngle)
     }
     private fun moved() { (parent as? Leaf)?.labels?.invalidate() }
     private var downRawX=0f; private var downRawY=0f; private var startX=0f; private var startY=0f; private var startAngle=0f
@@ -213,21 +253,36 @@ class ThingView(context: Context, val item: Keepsake, var place: Placement, priv
         val cx=at[0]+left+translationX+pivotX; val cy=at[1]+top+translationY+pivotY
         return atan2((e.rawY-cy).toDouble(),(e.rawX-cx).toDouble())
     }
-    override fun performClick(): Boolean { super.performClick(); if(!host.arranging) host.open(this); return true }
+    private var opening=false
+    override fun performClick(): Boolean {
+        super.performClick()
+        if(host.arranging || opening) return true
+        if(!moving) { host.open(this); return true }
+        // Peel up off the page, let the tag swing, then open.
+        opening=true
+        val a=place.angle
+        tween(560,update={ t ->
+            val s=keys(t,1f,1.14f,.97f,1f); scaleX=s; scaleY=s
+            translationY=keys(t,0f,-10*d,2*d,0f); rotation=a+keys(t,0f,-a*.7f,a*.2f,0f); moved()
+        },end={ scaleX=1f; scaleY=1f; translationY=0f; rotation=place.angle; moved() })
+        tween(1100,update={ t -> swing=keys(t,0f,16f,-11f,7f,-4f,2f,0f); moved() },end={ swing=0f; moved() })
+        postDelayed({ opening=false; if(isAttachedToWindow) host.open(this) },330)
+        return true
+    }
 
-    /** The one moment worth animating: a new thing lands on its page and sticks. */
+    /** The one moment worth a bigger show: a new thing lands on its page and sticks. */
     fun stickIn() {
         if(!moving) return
         alpha=0f; scaleX=1.4f; scaleY=1.4f; translationY=-46*k; rotation=place.angle-10f
         animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).rotation(place.angle).setStartDelay(120).setDuration(700).setInterpolator(OvershootInterpolator(1.3f))
-            .setUpdateListener { moved() }.withEndAction { moved() }.start()
+            .setUpdateListener { moved() }.withEndAction { moved(); val p=(parent as? View); if(p!=null) Confetti.burst(p,left+pivotX,top+pivotY,10,100f) }.start()
     }
     companion object { private const val HANDLE=28f }
 }
 
 /**
- * One page of a book: its paper and the things stuck on it. [lift] darkens it as it turns away;
- * [spine] is the shadow cast on it by a page turning over it.
+ * One page of a book: its paper and the things stuck on it, with doodles in the gaps. [lift] darkens it as it turns away;
+ * [spine] is the shadow cast on it by a page turning over it. Tap its date stamp and it thunks.
  */
 @SuppressLint("ViewConstructor")
 class Leaf(context: Context, val book: Book, val index: Int, private val pages: Int, items: List<Keepsake>, private val bookEmpty: Boolean,
@@ -238,7 +293,10 @@ class Leaf(context: Context, val book: Book, val index: Int, private val pages: 
     val top=PageLayout.top(title)
     private val stamp=items.minOfOrNull { it.created }?.let { stampDate(it) }
     private val paperRect=RectF()
-    private val shadeView=View(context).apply { background=GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,intArrayOf(Ink.alpha(Ink.INK,0f),Ink.alpha(Ink.INK,.05f),Ink.alpha(Ink.INK,.34f))); alpha=0f; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
+    private val shadeView=View(context).apply { background=android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,intArrayOf(Ink.alpha(Ink.INK,0f),Ink.alpha(Ink.INK,.05f),Ink.alpha(Ink.INK,.34f))); alpha=0f; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
+    private class Scribble(val mark: Mark, val x: Float, val y: Float, val size: Float, val color: Int, val angle: Float)
+    /** Doodles in the gaps, placed the same way every time the page is drawn. */
+    private val doodles: List<Scribble>
     /** Every thing's tag and note, above all the stickers. */
     val labels=object : View(context) {
         override fun onDraw(c: Canvas) {
@@ -252,17 +310,28 @@ class Leaf(context: Context, val book: Book, val index: Int, private val pages: 
             }
         }
     }.apply { importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
-    private val spineView=View(context).apply { background=GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,intArrayOf(Color.argb(100,20,20,30),Color.argb(24,20,20,30),Color.argb(0,20,20,30),Color.argb(0,20,20,30))); alpha=0f; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
+    private val spineView=View(context).apply { background=android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,intArrayOf(Color.argb(100,20,20,30),Color.argb(24,20,20,30),Color.argb(0,20,20,30),Color.argb(0,20,20,30))); alpha=0f; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
     var lift: Float
         get()=shadeView.alpha
         set(value) { shadeView.alpha=value }
     var spine: Float
         get()=spineView.alpha
         set(value) { spineView.alpha=value }
+    private var punch=1f
+    private var ring=0f
+    private val stampRect=RectF()
+    private val ringPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; color=Ink.ACCENT; strokeWidth=3f }
     init {
         setWillNotDraw(false); clipChildren=false
+        val r=Rng(seedOf(book.id)+index*31)
+        val spots=mutableListOf(floatArrayOf(332f,30f),floatArrayOf(22f,236f),floatArrayOf(340f,286f),floatArrayOf(24f,452f),floatArrayOf(334f,500f),floatArrayOf(196f,572f),floatArrayOf(56f,574f),floatArrayOf(300f,580f))
+        val inks=intArrayOf(Ink.SUN,Ink.BLUSH,Ink.SKY,Ink.MINT,Ink.ACCENT)
+        doodles=List(4) { i ->
+            val s=spots.removeAt((r.next()*spots.size).toInt().coerceAtMost(spots.size-1))
+            Scribble(Mark.entries[(r.next()*3).toInt().coerceAtMost(2)],s[0],s[1],r.between(18f,30f),inks[(i+index)%inks.size],r.between(-20f,20f))
+        }
         items.forEachIndexed { slot,item ->
-            val t=ThingView(context,item,item.place ?: PageLayout.auto(item,slot,top),book.paper,fit.k,hand,host)
+            val t=ThingView(context,item,item.place ?: PageLayout.auto(item,slot,top),fit.k,hand,host)
             things+=t; addView(t,paramsFor(t))
             load(item,t.loadSize) { t.show(it) }
         }
@@ -283,15 +352,31 @@ class Leaf(context: Context, val book: Book, val index: Int, private val pages: 
         paperRect.set(0f,0f,width.toFloat(),height.toFloat())
         drawPaper(c,book.paper,paperRect,d)
         c.save(); c.translate(fit.ox,fit.oy); c.scale(fit.k,fit.k)
-        title?.draw(c,20f,0f)
-        stamp?.let { drawStamp(c,it,340f-stampWidth(it),if(index==0) top+8f else 0f,if(index==0) 5f else -4f,book.paper.dark) }
-        if(bookEmpty && index==0) drawSlot(c,RectF(80f,top+40f,280f,top+210f),"your first\nthing goes here",hand,book.paper.dark)
+        doodles.forEach { drawMark(c,it.mark,it.x,it.y,it.size,it.color,it.angle) }
+        title?.draw(c,20f,0f,300f)
+        stamp?.let {
+            val w=stampWidth(it); val left=340f-w; val top=if(index==0) top-2f else 0f
+            drawStamp(c,it,left,top,if(index==0) 5f else -4f,punch)
+            stampRect.set(fit.ox+left*fit.k,fit.oy+top*fit.k,fit.ox+(left+w)*fit.k,fit.oy+(top+STAMP_HEIGHT)*fit.k)
+            if(ring>0f && ring<1f) { ringPaint.alpha=((1-ring)*200).roundToInt(); c.drawCircle(left+w/2,top+STAMP_HEIGHT/2,30f*(.4f+2f*ring),ringPaint) }
+        }
+        if(bookEmpty && index==0) drawSlot(c,RectF(80f,top+40f,280f,top+210f),"your first\nthing goes here",hand,false)
         c.restore()
         c.save(); c.scale(d,d)
         drawPageEdges(c,width/d,18f,height/d-18f,min(3,pages-1-index),true)
         drawPageEdges(c,0f,18f,height/d-18f,min(3,index),false)
         c.restore()
     }
+    @SuppressLint("ClickableViewAccessibility") // The stamp is decoration; nothing is lost without the thunk.
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when(e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> return stampRect.contains(e.x,e.y)
+            MotionEvent.ACTION_UP -> if(stampRect.contains(e.x,e.y)) thunk()
+        }
+        return true
+    }
+    /** The date stamp comes down hard and leaves a ring of ink. */
+    private fun thunk() = tween(500,update={ t -> punch=keys(t,1f,1.25f,.92f,1f); ring=t; invalidate() },end={ punch=1f; ring=0f; invalidate() })
 }
 
 /**
@@ -370,11 +455,18 @@ class BookView(context: Context, private val pages: Int, start: Int, private val
         private fun reset(l: Leaf) { l.rotationY=0f; l.lift=0f; l.spine=0f; l.translationX=0f; l.setLayerType(LAYER_TYPE_NONE,null) }
     }
 
-    /** Turns one page forward (1) or back (-1), as the arrow buttons do. */
+    /** Turns one page forward (1) or back (-1), as the arrow buttons do. With no page that way, the edge lifts and falls back. */
     fun turn(dir: Int) {
-        if(turning!=null || arranging || current==null || page+dir !in 0 until pages) return
+        if(turning!=null || arranging || current==null) return
+        if(page+dir !in 0 until pages) { nudge(dir); return }
         val t=Turn(dir)
         t.run(1f,640,AccelerateDecelerateInterpolator()) { t.commit() }
+    }
+    private fun nudge(dir: Int) {
+        val leaf=current ?: return
+        if(!moving) return
+        leaf.pivotX=0f; leaf.pivotY=height/2f; leaf.perspective(width*3.9f)
+        tween(420,DecelerateInterpolator(),update={ t -> leaf.rotationY=SWING*keys(t,0f,if(dir>0) 16f else -8f,0f) },end={ leaf.rotationY=0f })
     }
     /** Lifts the corner of the first page a little and lets it fall back, so it's clear pages turn. */
     fun peek() {
@@ -431,103 +523,124 @@ class BookView(context: Context, private val pages: Int, start: Int, private val
     }
 }
 
-/** A book's cover, made from its first things and its name. The open book also shows its pages fanned out behind. */
+/**
+ * A book on the desk: a fat patterned cover with an ink spine, an elastic band and page edges, its first things stuck on
+ * the front and its name in cut-out letters. [open] swings the cover back on its spine.
+ */
 @SuppressLint("ViewConstructor")
-class CoverView(context: Context, val book: Book, private val items: List<Keepsake>, private val pages: Int, private val hand: Typeface, load: Loader) : View(context) {
+class CoverView(context: Context, val book: Book, private val items: List<Keepsake>, private val hand: Typeface, load: Loader) : View(context) {
     private val d=resources.displayMetrics.density
     private val bitmaps=arrayOfNulls<Bitmap>(3)
-    private val name=CutLetters(book.name,21f,seedOf(book.id),172f)
-    private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val shade=Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter=PorterDuffColorFilter(Ink.INK,PorterDuff.Mode.SRC_IN); alpha=26 }
-    var leaves=false
-        set(value) { field=value; invalidate() }
+    private val name=CutLetters(book.name,20f,seedOf(book.id),168f)
+    private val fill=Paint(Paint.ANTI_ALIAS_FLAG)
+    private val line=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; color=Ink.INK; strokeJoin=Paint.Join.ROUND }
+    private val camera=Camera()
+    private val turn=Matrix()
+    private val rng=Rng(seedOf(book.id)+5)
+    private val star=floatArrayOf(rng.between(30f,60f),rng.between(150f,190f),rng.between(-20f,20f))
+    /** How far the cover has swung open, from 0 (shut) to 1. */
+    private var openness=0f
     init {
         items.take(3).forEachIndexed { i,item -> load(item,(170*d).roundToInt()) { b -> bitmaps[i]=b; invalidate() } }
         importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO
     }
+    private fun coverPath(scale: Float)=Path().apply { addRoundRect(RectF(0f,0f,COVER_W*scale,COVER_H*scale),floatArrayOf(5*scale,5*scale,18*scale,18*scale,18*scale,18*scale,5*scale,5*scale),Path.Direction.CW) }
     override fun onDraw(c: Canvas) {
         c.save(); c.scale(width/(WIDTH*d),height/(HEIGHT*d)) // the carousel scales covers down on short screens
-        if(leaves) {
-            val n=min(4,pages+(if(items.isNotEmpty()) 1 else 0))
-            for(k in n downTo 1) {
-                val r=RectF((28+12*k)*d,4f*k*d,(208+12*k)*d,(HEIGHT-4*k)*d)
-                paint.color=Color.argb(70,0,0,0); paint.shader=null; c.drawRoundRect(RectF(r).apply { offset(-3*d,0f) },11*d,11*d,paint)
-                c.save(); c.clipPath(Path().apply { addRoundRect(r,floatArrayOf(3*d,3*d,11*d,11*d,11*d,11*d,3*d,3*d),Path.Direction.CW) })
-                drawPaper(c,if(k%2==1) book.paper else Paper.PLAIN,r,d,0f); c.restore()
+        // The book's shadow, then the page edges, then the inside page that shows as the cover swings open.
+        c.save(); c.scale(d,d)
+        fill.shader=null; fill.color=Ink.INK; c.drawRoundRect(8f,8f,COVER_W+14f+8f,COVER_H+8f,18f,18f,fill)
+        val edges=RectF(COVER_W-14f,10f,COVER_W+14f,COVER_H-10f)
+        fill.color=Color.WHITE; c.drawRoundRect(edges,8f,8f,fill)
+        fill.color=Ink.alpha(Ink.INK,.3f); var y=edges.top+4f; while(y<edges.bottom-2f) { c.drawRect(edges.left,y,edges.right-2f,y+1f,fill); y+=4f }
+        line.strokeWidth=2.5f; c.drawRoundRect(edges,8f,8f,line)
+        c.restore()
+        if(openness>0f) {
+            drawPaper(c,book.paper,RectF(0f,0f,COVER_W*d,COVER_H*d),d)
+            c.save(); c.scale(d,d); line.strokeWidth=3f; c.drawPath(coverPath(1f),line); c.restore()
+            val angle=-165f*openness
+            camera.save(); camera.setLocation(0f,0f,-24f); camera.rotateY(angle); camera.getMatrix(turn); camera.restore()
+            turn.preTranslate(0f,-COVER_H*d/2); turn.postTranslate(0f,COVER_H*d/2)
+            c.concat(turn)
+            if(abs(angle)>90f) { // Past halfway, we're looking at the inside of the cover.
+                c.save(); c.scale(d,d); fill.color=Ink.PAPER; c.drawPath(coverPath(1f),fill); line.strokeWidth=3f; c.drawPath(coverPath(1f),line); c.restore()
+                c.restore(); return
             }
         }
-        val cover=Path().apply { addRoundRect(RectF(0f,0f,210*d,HEIGHT*d),floatArrayOf(4*d,4*d,13*d,13*d,13*d,13*d,4*d,4*d),Path.Direction.CW) }
-        paint.shader=null; paint.color=Color.rgb(213,189,147); paint.setShadowLayer(18*d,0f,12*d,Color.argb(150,0,0,0)); c.drawPath(cover,paint); paint.clearShadowLayer()
-        c.save(); c.clipPath(cover)
-        drawLinen(c,RectF(0f,0f,210*d,HEIGHT*d),d)
-        paint.shader=LinearGradient(0f,0f,13*d,0f,intArrayOf(Color.argb(56,0,0,0),Color.argb(13,0,0,0),Color.argb(51,255,255,255)),floatArrayOf(0f,.7f,1f),Shader.TileMode.CLAMP)
-        c.drawRect(0f,0f,13*d,HEIGHT*d,paint); paint.shader=null
-        c.scale(d,d)
+        drawCoverPattern(c,book.paper,coverPath(d),d)
+        c.save(); c.scale(d,d)
+        c.save(); c.clipPath(coverPath(1f))
+        fill.color=Ink.INK; c.drawRect(0f,0f,20f,COVER_H,fill)
+        val band=RectF(COVER_W-40f,-2f,COVER_W-28f,COVER_H+2f)
+        fill.color=Ink.SUN; c.drawRect(band,fill); line.strokeWidth=2.5f; c.drawLine(band.left,band.top,band.left,band.bottom,line); c.drawLine(band.right,band.top,band.right,band.bottom,line)
+        c.restore()
         if(items.isEmpty()) {
-            drawSlot(c,RectF(42f,52f,168f,202f),"your first\nthing goes here",hand,false)
-            drawTape(c,84f,53f,48f,-10f,2)
+            drawSlot(c,RectF(40f,40f,COVER_W-50f,210f),"your first\nthing goes here",hand,false)
+            drawTape(c,COVER_W/2-5f,41f,52f,-10f,2)
         } else items.take(3).forEachIndexed { i,item ->
             val (x,y,size,angle)=SLOTS[i]
-            val box=boxOf(item.aspect,if(item.framed) size else size*(if(item.aspect>=1f) 1f else .8f))
+            val box=boxOf(item.aspect,if(item.framed) size else size*(if(item.aspect>=1f) 1f else .82f))
             c.save(); c.translate(x,y); c.rotate(angle,box.x/2,box.y/2)
-            bitmaps[i]?.let { b ->
-                val dst=RectF(0f,0f,box.x,box.y)
-                c.save(); c.translate(0f,2f); c.drawBitmap(b,null,dst,shade); c.restore(); c.drawBitmap(b,null,dst,paint)
-            }
-            if(item.framed) drawTape(c,box.x/2,-1f,44f,4f,i)
+            bitmaps[i]?.let { b -> drawCutout(c,b,RectF(0f,0f,box.x,box.y),1.6f,3f) }
+            if(item.framed) drawTape(c,box.x/2,-1f,46f,4f,i)
             c.restore()
         }
-        name.draw(c,24f,HEIGHT-22f-name.height)
+        drawMark(c,Mark.STAR,star[0],star[1],26f,Ink.SUN,star[2])
+        val room=COVER_W-56f; val shown=min(name.width,room)
+        name.draw(c,22f+(COVER_W-50f-shown)/2,COVER_H-20f-name.heightIn(room),room)
+        line.strokeWidth=3f; c.drawPath(coverPath(1f),line)
         c.restore(); c.restore()
+    }
+    /** Swings the cover open on its spine, then calls [then]. */
+    fun open(then: () -> Unit) {
+        if(!moving) { then(); return }
+        tween(460,DecelerateInterpolator(1.4f),update={ openness=it; invalidate() },end={ then(); postDelayed({ openness=0f; invalidate() },400) })
     }
     companion object {
         const val WIDTH=270f; const val HEIGHT=330f
-        private val SLOTS=arrayOf(floatArrayOf(24f,22f,150f,-6f),floatArrayOf(110f,124f,88f,9f),floatArrayOf(18f,150f,98f,-10f))
+        private const val COVER_W=226f; private const val COVER_H=316f
+        private val SLOTS=arrayOf(floatArrayOf(30f,26f,128f,-9f),floatArrayOf(96f,146f,116f,8f),floatArrayOf(132f,24f,76f,13f))
     }
 }
 
-/** The books on the desk, one in front and its neighbours peeking in. Swipe or use the arrows to move between them. */
+/** The books on the desk, one in front and its neighbours peeking in, with a burst badge for how full it is. Swipe or use the arrows. */
 @SuppressLint("ViewConstructor")
-class DeskCarousel(context: Context, private val covers: List<View>, index: Int, private val onPick: (Int) -> Unit, private val onOpen: (Int) -> Unit) : FrameLayout(context) {
+class DeskCarousel(context: Context, private val covers: List<View>, index: Int, private val badge: View?, private val onPick: (Int) -> Unit, private val onOpen: (Int) -> Unit) : FrameLayout(context) {
     private val d=resources.displayMetrics.density
     var index=index; private set
     private var scale=1f
     private val slop=ViewConfiguration.get(context).scaledTouchSlop
     private var downX=0f; private var downY=0f; private var dragging=false; private var dx=0f
-    private val floor=Paint(Paint.ANTI_ALIAS_FLAG)
     init {
-        clipChildren=false; setWillNotDraw(false)
+        clipChildren=false
         covers.forEachIndexed { i,v -> addView(v); v.setOnClickListener { if(i==this.index) onOpen(i) else go(i) } }
+        badge?.let { addView(it) }
     }
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         val w=MeasureSpec.getSize(widthSpec); val h=MeasureSpec.getSize(heightSpec)
-        scale=min(w/(360*d),(h-40*d)/(CoverView.HEIGHT*d)).coerceIn(.5f,1.25f)
+        scale=min(w/(360*d),(h-24*d)/(CoverView.HEIGHT*d)).coerceIn(.5f,1.25f)
         covers.forEach { it.measure(MeasureSpec.makeMeasureSpec((CoverView.WIDTH*d*scale).roundToInt(),MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec((CoverView.HEIGHT*d*scale).roundToInt(),MeasureSpec.EXACTLY)) }
+        badge?.measure(MeasureSpec.makeMeasureSpec((74*d*scale).roundToInt(),MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec((74*d*scale).roundToInt(),MeasureSpec.EXACTLY))
         setMeasuredDimension(w,h)
     }
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        floor.shader=RadialGradient(0f,0f,1f,intArrayOf(Color.argb(102,0,0,0),Color.argb(0,0,0,0)),null,Shader.TileMode.CLAMP)
-        post { arrange(false) }
-    }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { post { arrange(false) } }
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val left=(width/2f-18*d*scale-105*d*scale).roundToInt(); val top=((height-CoverView.HEIGHT*d*scale-24*d)/2).roundToInt().coerceAtLeast(0)
+        val left=(width/2f-125*d*scale).roundToInt(); val top=((height-CoverView.HEIGHT*d*scale)/2).roundToInt().coerceAtLeast(0)
         covers.forEach { v -> v.layout(left,top,left+v.measuredWidth,top+v.measuredHeight) }
-    }
-    override fun onDraw(c: Canvas) {
-        val cx=width/2f-8*d*scale; val cy=(height-CoverView.HEIGHT*d*scale-24*d)/2+CoverView.HEIGHT*d*scale+12*d
-        c.save(); c.translate(cx,cy); c.scale(110*d*scale,12*d); c.drawCircle(0f,0f,1f,floor); c.restore()
+        badge?.let { val bx=left+(212*d*scale).roundToInt(); val by=top-(26*d*scale).roundToInt(); it.layout(bx,by,bx+it.measuredWidth,by+it.measuredHeight) }
     }
     /** Moves the books into place; [animate] slides them, as after a swipe. */
     fun arrange(animate: Boolean) {
         covers.forEachIndexed { i,v ->
             val o=i-index; val cur=o==0
-            (v as? CoverView)?.leaves=cur
-            v.pivotX=105*d*scale; v.pivotY=CoverView.HEIGHT*d*scale/2; v.perspective(900*d*scale)
-            val tx=o*252*d*scale+dx; val s=if(cur) 1f else .78f; val a=if(cur) 1f else .45f; val ry=if(cur) -14f else 0f
+            v.pivotX=113*d*scale; v.pivotY=CoverView.HEIGHT*d*scale/2
+            val tx=o*258*d*scale+dx; val s=if(cur) 1f else .82f; val tilt=if(cur) -3f else if(o<0) -6f else 5f
             v.isFocusable=abs(o)<=1; v.importantForAccessibility=if(abs(o)<=1) IMPORTANT_FOR_ACCESSIBILITY_YES else IMPORTANT_FOR_ACCESSIBILITY_NO
-            if(animate && moving) v.animate().translationX(tx).scaleX(s).scaleY(s).alpha(a).rotationY(ry).setDuration(350).setInterpolator(DecelerateInterpolator(2f)).start()
-            else { v.animate().cancel(); v.translationX=tx; v.scaleX=s; v.scaleY=s; v.alpha=a; v.rotationY=ry }
+            v.z=if(cur) 1f else 0f
+            if(animate && moving) v.animate().translationX(tx).scaleX(s).scaleY(s).rotation(tilt).setDuration(520).setInterpolator(OvershootInterpolator(1.1f)).start()
+            else { v.animate().cancel(); v.translationX=tx; v.scaleX=s; v.scaleY=s; v.rotation=tilt }
         }
+        badge?.z=2f
     }
     fun go(i: Int) { val to=i.coerceIn(0,covers.size-1); if(to==index) { arrange(true); return }; index=to; arrange(true); onPick(to) }
 
@@ -555,160 +668,88 @@ class DeskCarousel(context: Context, private val covers: List<View>, index: Int,
     }
 }
 
-/** A month taped to the desk. Each day shows the first thing kept that day; days with things open them. Swipe for other months. */
+/**
+ * The top of a thing's own page: its sticker large in the sunshine, the photo it came from taped up beside it,
+ * and its date stamp. The sticker squishes when tapped, the photo swings on its tape, and the stamp thunks.
+ */
 @SuppressLint("ViewConstructor")
-class CalendarSheet(context: Context, year: Int, private val month: Int, private val byDay: Map<Int,List<Keepsake>>, private val today: Int,
-                    private val hand: Typeface, private val mono: Typeface, load: Loader, photo: Loader, private val onDay: (Int) -> Unit) : FrameLayout(context) {
+class ThingArt(context: Context, private val item: Keepsake, private val k: Float) : View(context) {
     private val d=resources.displayMetrics.density
-    private val cal=java.util.Calendar.getInstance().apply { clear(); set(year,month,1) }
-    private val startDow=cal.get(java.util.Calendar.DAY_OF_WEEK)-1
-    private val days=cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
-    private val rows=(startDow+days+6)/7
-    private val bitmaps=HashMap<Int,Bitmap>()
-    private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val text=Paint(Paint.ANTI_ALIAS_FLAG)
-    private val grid=Paint()
-    private val ring=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; color=Pen.BLUE; strokeCap=Paint.Cap.ROUND }
-    private val numbers=Typeface.create("sans-serif-medium",Typeface.NORMAL)
-    /** The sheet itself; the view is larger, to leave room for its shadow and tape. */
-    private val sheet=RectF()
-    private var cellW=0f; private var cellH=0f
-    var onSwipe: ((Int) -> Unit)?=null
-    private val slop=ViewConfiguration.get(context).scaledTouchSlop
-    private var downX=0f; private var downY=0f; private var swiping=false
-    init {
-        setWillNotDraw(false); clipChildren=false
-        byDay.forEach { (day,list) ->
-            // A whole photo is cut into a shape from the photo itself, not from its white-bordered print.
-            (if(list.first().framed) photo else load)(list.first(),(80*d).roundToInt()) { b -> if(b!=null) { bitmaps[day]=b; invalidate() } }
-            addView(View(context).apply {
-                isFocusable=true; isClickable=true; background=RippleDrawable(ColorStateList.valueOf(Ink.alpha(Ink.INK,.1f)),null,ShapeDrawable())
-                contentDescription="${monthName(month)} $day: ${list.joinToString { it.title }}"
-                setOnClickListener { onDay(day) }; tag=day
-            })
-        }
-    }
-    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val w=min(width-24*d,420*d); val left=(width-w)/2
-        cellW=(w-14*d)/7f; cellH=min(76*d,(height-12*d-30*d-16*d-24*d)/rows)
-        sheet.set(left,12*d,left+w,12*d+30*d+rows*cellH+16*d)
-        for(i in 0 until childCount) {
-            val v=getChildAt(i); val cell=cellRect(v.tag as Int)
-            v.measure(MeasureSpec.makeMeasureSpec(cell.width().toInt(),MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(cell.height().toInt(),MeasureSpec.EXACTLY))
-            v.layout(cell.left.toInt(),cell.top.toInt(),cell.left.toInt()+v.measuredWidth,cell.top.toInt()+v.measuredHeight)
-        }
-    }
-    private fun cellRect(day: Int): RectF {
-        val i=startDow+day-1; val x=sheet.left+7*d+(i%7)*cellW; val y=sheet.top+30*d+(i/7)*cellH
-        return RectF(x,y,x+cellW,y+cellH)
-    }
-    override fun onDraw(c: Canvas) {
-        paint.color=Color.rgb(252,251,247); paint.setShadowLayer(18*d,0f,12*d,Color.argb(150,0,0,0)); c.drawRoundRect(sheet,5*d,5*d,paint); paint.clearShadowLayer()
-        Textures.crumple?.let { c.save(); c.clipRect(sheet); paint.alpha=150; c.drawBitmap(it,null,sheet,paint); paint.alpha=255; c.restore() }
-        text.typeface=mono; text.textSize=10.5f*d; text.color=Ink.INK_2; text.textAlign=Paint.Align.CENTER
-        "SMTWTFS".forEachIndexed { i,ch -> c.drawText(ch.toString(),sheet.left+7*d+(i+.5f)*cellW,sheet.top+21*d,text) }
-        grid.color=Ink.alpha(Ink.INK,.22f); grid.strokeWidth=max(1f,d)
-        val gx=sheet.left+7*d; val gy=sheet.top+30*d
-        for(r in 0..rows) c.drawLine(gx,gy+r*cellH,gx+7*cellW,gy+r*cellH,grid)
-        for(col in 0..7) c.drawLine(gx+col*cellW,gy,gx+col*cellW,gy+rows*cellH,grid)
-        for(day in 1..days) {
-            val cell=cellRect(day)
-            text.typeface=numbers; text.textSize=9.5f*d; text.color=Ink.INK; text.textAlign=Paint.Align.LEFT
-            c.drawText(day.toString(),cell.left+4*d,cell.top+13*d,text)
-            val list=byDay[day]
-            val b=bitmaps[day]
-            if(list!=null && b!=null) {
-                val item=list.first(); val size=min(cellW-6*d,cellH-20*d)
-                c.save(); c.translate(cell.centerX()-size/2,cell.top+17*d)
-                val fill: Float
-                if(item.framed) { c.clipPath(cutShape(seedOf(item.id),size)); fill=max(size/b.width,size/b.height) }
-                else { c.rotate(Rng(seedOf(item.id)).between(-9f,9f),size/2,size/2); fill=min(size/b.width,size/b.height)*(if(item.aspect>1.6f) 1.3f else 1.05f) }
-                c.drawBitmap(b,null,RectF((size-b.width*fill)/2,(size-b.height*fill)/2,(size+b.width*fill)/2,(size+b.height*fill)/2),paint)
-                c.restore()
-            }
-            if(list!=null && list.size>1) { text.typeface=hand; text.textSize=13*d; text.color=Pen.BLUE; text.textAlign=Paint.Align.RIGHT; c.drawText("+${list.size-1}",cell.right-3*d,cell.bottom-4*d,text) }
-            if(day==today) {
-                ring.strokeWidth=1.5f
-                c.save(); c.translate(cell.left+d,cell.top+d); c.scale(d,d)
-                c.drawPath(svgPath("M2 10 C 1 3, 17 1, 19 8 C 21 15, 6 18, 3 12 C 2 9, 6 4, 11 3"),ring); c.restore()
-            }
-        }
-        c.save(); c.scale(d,d)
-        drawTape(c,sheet.left/d+4f,sheet.top/d+2f,46f,-38f,0); drawTape(c,sheet.right/d-4f,sheet.top/d+2f,46f,38f,1)
-        c.restore()
-    }
-    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
-        when(e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX=e.x; downY=e.y; swiping=false }
-            MotionEvent.ACTION_MOVE -> if(!swiping && abs(e.x-downX)>slop && abs(e.x-downX)>abs(e.y-downY)) { swiping=true; return true }
-        }
-        return swiping
-    }
-    @SuppressLint("ClickableViewAccessibility") // Months are also changed with the arrow buttons.
-    override fun onTouchEvent(e: MotionEvent): Boolean {
-        when(e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX=e.x; downY=e.y; return true }
-            MotionEvent.ACTION_UP -> { val dx=e.x-downX; if(abs(dx)>60*d && abs(dx)>abs(e.y-downY)) onSwipe?.invoke(if(dx<0) 1 else -1); swiping=false }
-            MotionEvent.ACTION_CANCEL -> swiping=false
-        }
-        return true
-    }
-    companion object {
-        fun monthName(m: Int)=arrayOf("January","February","March","April","May","June","July","August","September","October","November","December")[m]
-    }
-}
-
-/** The top of a thing's own page: its sticker large, the photo it came from taped behind, its tag and its date. */
-@SuppressLint("ViewConstructor")
-class ThingArt(context: Context, private val item: Keepsake, private val paper: Paper, private val k: Float, private val hand: Typeface) : View(context) {
     private var art: Bitmap?=null
     private var photo: Bitmap?=null
-    private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val shade=Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter=PorterDuffColorFilter(Ink.INK,PorterDuff.Mode.SRC_IN); alpha=26 }
-    private val torn=tornPath(188f,128f,seedOf(item.id)+9)
-    init { importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_YES; contentDescription=if(item.framed) "${item.title}, a photo" else item.title }
+    private val fill=Paint(Paint.ANTI_ALIAS_FLAG)
+    private val line=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; color=Ink.INK }
+    private val image=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val stamp=stampDate(item.created)
+    private val heroAngle=if(item.framed) -3f else -6f
+    private var squashX=1f; private var squashY=1f; private var photoSwing=0f; private var punch=1f
+    private val hero=RectF(); private val print=RectF()
+    init { importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_YES; contentDescription=if(item.framed) "${item.title}, a photo" else item.title; isClickable=true }
     fun showArt(b: Bitmap?) { art=b; invalidate() }
     fun showPhoto(b: Bitmap?) { photo=b; invalidate() }
+    /** Where the sticker's middle is, in pixels from the top, for the sunshine to fan out from. */
+    val heroCenterY get()=CY*k
     override fun onMeasure(w: Int, h: Int) = setMeasuredDimension(MeasureSpec.getSize(w),(HEIGHT*k).roundToInt())
     override fun onDraw(c: Canvas) {
         c.save(); c.translate((width-360*k)/2,0f); c.scale(k,k)
+        drawMark(c,Mark.SPARKLE,44f,52f,40f,Color.WHITE)
+        drawMark(c,Mark.STAR,322f,236f,32f,Ink.ACCENT,12f)
+        drawMark(c,Mark.HEART,36f,258f,28f,Ink.BLUSH,-10f)
         val behind=photo
-        val cx: Float; val cy: Float
         if(!item.framed && behind!=null) {
-            c.save(); c.translate(30f,28f); c.rotate(-5f,94f,64f)
-            paint.color=Ink.alpha(Ink.INK,.2f); c.save(); c.translate(0f,2f); c.drawPath(torn,paint); c.restore()
-            c.save(); c.clipPath(torn); val s=max(188f/behind.width,128f/behind.height)
-            c.drawBitmap(behind,null,RectF((188-behind.width*s)/2,(128-behind.height*s)/2,(188+behind.width*s)/2,(128+behind.height*s)/2),paint); c.restore()
-            c.restore()
-            if(paper.dark) drawPin(c,125f,30f) else drawTape(c,119f,29f,54f,-8f,seedOf(item.id))
-            cx=200f; cy=200f
-        } else { cx=180f; cy=190f }
-        art?.let { b ->
-            val box=boxOf(item.aspect,if(item.framed) 260f else 236f); val angle=if(item.framed) -3f else 4f+Rng(seedOf(item.id)+3).next()*4f
-            c.save(); c.translate(cx-box.x/2,cy-box.y/2); c.rotate(angle,box.x/2,box.y/2)
-            val s=min(box.x/b.width,box.y/b.height); val dst=RectF((box.x-b.width*s)/2,(box.y-b.height*s)/2,(box.x+b.width*s)/2,(box.y+b.height*s)/2)
-            c.save(); c.translate(0f,4f); c.drawBitmap(b,null,dst,shade); c.restore(); c.drawBitmap(b,null,dst,paint)
-            if(item.framed) drawFastener(c,paper,box.x,seedOf(item.id))
+            val w=112f; val h=min(150f,w*behind.height/behind.width.toFloat())
+            print.set(226f,18f,226f+w+14f,18f+h+30f)
+            c.save(); c.rotate(8f+photoSwing,print.centerX(),print.top)
+            drawPop(c,print,2f,Color.WHITE,2f,3f)
+            val inner=RectF(print.left+7f,print.top+7f,print.right-7f,print.bottom-23f)
+            c.save(); c.clipRect(inner); val s=max(inner.width()/behind.width,inner.height()/behind.height)
+            c.drawBitmap(behind,null,RectF(inner.centerX()-behind.width*s/2,inner.centerY()-behind.height*s/2,inner.centerX()+behind.width*s/2,inner.centerY()+behind.height*s/2),image); c.restore()
+            drawTape(c,print.centerX(),print.top,62f,-6f,0)
             c.restore()
         }
-        drawString(c,Path().apply { moveTo(214f,292f); cubicTo(226f,308f,232f,318f,228f,330f) })
-        drawTag(c,item.title,min(214f,330f-min(250f,40f+item.title.length*12f)),324f,4f,hand,big=true)
-        drawStamp(c,stampDate(item.created),26f,336f,-6f,paper.dark)
+        art?.let { b ->
+            val box=boxOf(item.aspect,if(item.framed) 250f else 230f)
+            hero.set(CX-box.x/2,CY-box.y/2,CX+box.x/2,CY+box.y/2)
+            c.save(); c.rotate(heroAngle,CX,CY); c.scale(squashX,squashY,CX,CY)
+            val s=min(box.x/b.width,box.y/b.height)
+            drawCutout(c,b,RectF(CX-b.width*s/2,CY-b.height*s/2,CX+b.width*s/2,CY+b.height*s/2),2.2f,4.5f)
+            c.restore()
+            if(item.framed) { c.save(); c.rotate(heroAngle,CX,CY); c.translate(hero.left,hero.top); drawFastener(c,box.x,seedOf(item.id)); c.restore() }
+        }
+        drawStamp(c,stamp,22f,HEIGHT-STAMP_HEIGHT-10f,-6f,punch)
         c.restore()
     }
-    companion object { const val HEIGHT=390f }
+    @SuppressLint("ClickableViewAccessibility") // performClick squishes the sticker; the other two are decoration.
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if(e.actionMasked==MotionEvent.ACTION_DOWN) return true
+        if(e.actionMasked!=MotionEvent.ACTION_UP) return true
+        val ux=(e.x-(width-360*k)/2)/k; val uy=e.y/k
+        when {
+            print.contains(ux,uy) -> tween(1000,update={ t -> photoSwing=keys(t,0f,-12f,8f,-4f,2f,0f); invalidate() })
+            uy>HEIGHT-STAMP_HEIGHT-24f && ux<200f -> tween(420,update={ t -> punch=keys(t,1f,1.25f,.92f,1f); invalidate() })
+            else -> performClick()
+        }
+        return true
+    }
+    override fun performClick(): Boolean {
+        super.performClick()
+        tween(620,update={ t -> squashX=keys(t,1f,1.18f,.9f,1.05f,1f); squashY=keys(t,1f,.84f,1.12f,.96f,1f); invalidate() })
+        Confetti.burst(this,width/2f,CY*k-40*d,6,120f)
+        return true
+    }
+    companion object { const val HEIGHT=330f; private const val CX=172f; private const val CY=160f }
 }
 
-/** A round paper sample to choose a book's paper with. */
+/** A round sample of a book's pattern, to choose it with. The book's own is ringed in ink. */
 class Swatch(context: Context, val paper: Paper) : View(context) {
     private val d=resources.displayMetrics.density
-    private val ring=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE }
-    init { isClickable=true; isFocusable=true; contentDescription="${paper.label} paper" }
+    private val ring=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; color=Ink.INK }
+    init { isClickable=true; isFocusable=true; contentDescription="${paper.label} pattern" }
     override fun onDraw(c: Canvas) {
-        val r=min(width,height)/2f-4*d; val cx=width/2f; val cy=height/2f
-        c.save(); c.clipPath(Path().apply { addCircle(cx,cy,r,Path.Direction.CW) }); drawPaper(c,paper,RectF(cx-r,cy-r,cx+r,cy+r),d,0f); c.restore()
-        ring.color=Ink.alpha(Ink.INK,.14f); ring.strokeWidth=d; c.drawCircle(cx,cy,r,ring)
-        if(isSelected) { ring.color=Pen.BLUE; ring.strokeWidth=2.5f*d; c.drawCircle(cx,cy,r+2.5f*d,ring) }
+        val r=min(width,height)/2f-6*d; val cx=width/2f; val cy=height/2f
+        drawCoverPattern(c,paper,Path().apply { addCircle(cx,cy,r,Path.Direction.CW) },d)
+        ring.strokeWidth=2*d; c.drawCircle(cx,cy,r,ring)
+        if(isSelected) { ring.strokeWidth=3*d; c.drawCircle(cx,cy,r+4*d,ring) }
     }
     override fun setSelected(selected: Boolean) { super.setSelected(selected); invalidate() }
 }
@@ -719,19 +760,20 @@ class TagBackground(private val d: Float) : Drawable() {
     var focused=false
         set(value) { field=value; invalidateSelf() }
     override fun draw(c: Canvas) {
-        val b=bounds; val notch=17*d; val h=b.height().toFloat()
-        val shape=Path().apply { moveTo(b.left+notch,b.top.toFloat()); lineTo(b.right.toFloat(),b.top.toFloat()); lineTo(b.right.toFloat(),b.bottom.toFloat()); lineTo(b.left+notch,b.bottom.toFloat()); lineTo(b.left.toFloat(),b.top+h/2); close() }
-        paint.style=Paint.Style.FILL; paint.color=Ink.alpha(Ink.INK,.22f); c.save(); c.translate(0f,2*d); c.drawPath(shape,paint); c.restore()
-        paint.color=if(focused) Color.rgb(226,199,155) else Ink.KRAFT; c.drawPath(shape,paint)
-        paint.color=Color.argb(230,255,255,255); c.drawCircle(b.left+15*d,b.top+h/2,4*d,paint)
-        paint.style=Paint.Style.STROKE; paint.strokeWidth=d; paint.color=Ink.alpha(Ink.INK,.35f); c.drawCircle(b.left+15*d,b.top+h/2,4*d,paint)
+        val b=bounds; val notch=17*d; val lift=3*d; val h=b.height()-lift
+        val shape=Path().apply { moveTo(b.left+notch,b.top.toFloat()); lineTo(b.right-lift,b.top.toFloat()); lineTo(b.right-lift,b.top+h); lineTo(b.left+notch,b.top+h); lineTo(b.left.toFloat(),b.top+h/2); close() }
+        paint.style=Paint.Style.FILL; paint.color=Ink.INK; c.save(); c.translate(lift,lift); c.drawPath(shape,paint); c.restore()
+        paint.color=if(focused) Color.rgb(232,198,152) else Ink.KRAFT; c.drawPath(shape,paint)
+        paint.style=Paint.Style.STROKE; paint.strokeWidth=2.2f*d; paint.color=Ink.INK; paint.strokeJoin=Paint.Join.ROUND; c.drawPath(shape,paint)
+        paint.style=Paint.Style.FILL; paint.color=Ink.PAPER; c.drawCircle(b.left+15*d,b.top+h/2,4.5f*d,paint)
+        paint.style=Paint.Style.STROKE; paint.strokeWidth=1.6f*d; paint.color=Ink.INK; c.drawCircle(b.left+15*d,b.top+h/2,4.5f*d,paint)
     }
     override fun setAlpha(alpha: Int) { paint.alpha=alpha }
     override fun setColorFilter(filter: ColorFilter?) { paint.colorFilter=filter }
     @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.TRANSLUCENT
 }
 
-/** Any view's background drawn as a book's paper. */
+/** Any view's background drawn as a page of a book. */
 class PaperBackground(private val paper: Paper, private val d: Float) : Drawable() {
     private val rect=RectF()
     override fun draw(c: Canvas) { rect.set(bounds); drawPaper(c,paper,rect,d) }
@@ -757,7 +799,7 @@ class GhostBook(context: Context, private val hand: Typeface) : View(context) {
     private val d=resources.displayMetrics.density
     override fun onDraw(c: Canvas) {
         c.save(); c.scale(width/(CoverView.WIDTH*d)*d,height/(CoverView.HEIGHT*d)*d)
-        drawSlot(c,RectF(2f,2f,208f,CoverView.HEIGHT-2f),"+\nNew book",hand,true)
+        drawSlot(c,RectF(2f,2f,224f,CoverView.HEIGHT-14f),"+\nNew book",hand,true)
         c.restore()
     }
 }
@@ -768,18 +810,18 @@ class ArrowView(context: Context) : View(context) {
     private val pen=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; color=Color.WHITE; strokeCap=Paint.Cap.ROUND; strokeJoin=Paint.Join.ROUND }
     init { importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
     override fun onDraw(c: Canvas) {
-        c.save(); c.scale(d,d); pen.strokeWidth=1.7f
+        c.save(); c.scale(d,d); pen.strokeWidth=2.2f
         c.drawPath(svgPath("M4 8 C 20 24, 38 32, 58 28 M49 22 L59 28 L50 35"),pen); c.restore()
     }
 }
 
-/** A strip of tape, or a pin on cork, holding the top of the card below it. */
-class TapeView(context: Context, private val paper: Paper, private val kind: Int) : View(context) {
+/** A strip of tape holding the top of the card below it. */
+class TapeView(context: Context, private val kind: Int) : View(context) {
     private val d=resources.displayMetrics.density
     init { importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO; elevation=6*d; outlineProvider=null }
     override fun onDraw(c: Canvas) {
         c.save(); c.scale(d,d)
-        if(paper.dark) drawPin(c,width/d/2,height/d/2) else drawTape(c,width/d/2,height/d/2,54f,3f,kind)
+        drawTape(c,width/d/2,height/d/2,58f,3f,kind)
         c.restore()
     }
 }
