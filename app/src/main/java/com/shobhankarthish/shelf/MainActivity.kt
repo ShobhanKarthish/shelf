@@ -3,10 +3,8 @@ package com.shobhankarthish.shelf
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -101,8 +99,6 @@ class MainActivity : Activity(), ThingHost {
         edgeToEdge()
         // The system bars are the same size from one launch to the next, so the first screen can be laid out around them straight away.
         insetTop=prefs.getInt("insetTop",0); insetBottom=prefs.getInt("insetBottom",0)
-        // Paper is drawn plain until its grain is made; then everything on screen redraws once.
-        Textures.warm { if(!isDestroyed && ::frame.isInitialized) redraw(frame) }
         draftTitle = state?.getString("title") ?: ""
         draftStory = state?.getString("story") ?: ""
         draftBook = state?.getString("book")
@@ -147,7 +143,7 @@ class MainActivity : Activity(), ThingHost {
     }
 
     // ---------- the window ----------
-    /** Every screen draws behind the system bars: the desk is dark and paper is light, all the way to the edges. */
+    /** Every screen draws behind the system bars: the desk is cobalt and paper is light, all the way to the edges. */
     private fun edgeToEdge() {
         @Suppress("DEPRECATION") run { window.statusBarColor=Color.TRANSPARENT; window.navigationBarColor=Color.TRANSPARENT }
         if(Build.VERSION.SDK_INT>=29) window.isNavigationBarContrastEnforced=false
@@ -166,9 +162,9 @@ class MainActivity : Activity(), ThingHost {
     /** Starts a screen on the desk ([paper] null) or on a sheet of paper. */
     private fun stage(name: String, paper: Paper?) {
         selectionView?.dispose(); selectionView=null; closeNote=null; bookView=null; relayout=null; veil=null; openDialog=null
-        page=name; titleField=null; storyField=null; onDark=paper==null || paper.dark
+        page=name; titleField=null; storyField=null; onDark=paper==null
         frame=FrameLayout(this).apply {
-            if(paper==null) setBackgroundColor(Pen.DESK) else background=PaperBackground(paper,density)
+            background=if(paper==null) DeskBackground(density) else PaperBackground(paper,density)
             // Only the bars decide a screen's layout. The keyboard coming and going must never rebuild a screen,
             // or a dialog being typed into would be thrown away with it.
             setOnApplyWindowInsetsListener { _,insets ->
@@ -201,7 +197,6 @@ class MainActivity : Activity(), ThingHost {
         pad()
         if(moving) { body.alpha=0f; body.translationY=dp(10f); body.animate().alpha(1f).translationY(0f).setDuration(180).setInterpolator(DecelerateInterpolator()).start() }
     }
-    private fun redraw(view: View) { view.invalidate(); (view as? ViewGroup)?.let { g -> for(i in 0 until g.childCount) redraw(g.getChildAt(i)) } }
     private fun pad() {
         if(!::body.isInitialized) return
         // With the keyboard open, the column ends above it; scrolling views keep the field being typed in on screen as they shrink.
@@ -212,7 +207,7 @@ class MainActivity : Activity(), ThingHost {
     private fun text(value: String, sp: Float, face: Typeface, color: Int=if(onDark) Color.WHITE else Ink.INK, spacing: Float=1.3f) = TextView(this).apply {
         text=value; typeface=face; setTextSize(TypedValue.COMPLEX_UNIT_SP,sp); setTextColor(color); setLineSpacing(0f,spacing)
     }
-    private fun title(value: String, sp: Float=34f) = text(value,sp,fonts.hand,spacing=1f).apply { isAccessibilityHeading=true }
+    private fun title(value: String, sp: Float=34f) = text(value,sp*.84f,fonts.display,spacing=1.05f).apply { isAccessibilityHeading=true }
     private fun prose(value: String) = text(value,15.5f,fonts.sans,if(onDark) Color.WHITE else Ink.INK_2,1.35f)
     private fun label(value: String, color: Int=if(onDark) Color.WHITE else Ink.INK_2) = text(value.uppercase(),11f,fonts.mono,color,1.2f).apply { letterSpacing=.16f }
     private fun add(view: View, top: Int=0, width: Int=-1) { body.addView(view,LinearLayout.LayoutParams(width,-2).apply { topMargin=dp(top) }) }
@@ -256,23 +251,28 @@ class MainActivity : Activity(), ThingHost {
         if(onDark && page!="desk") setShadowLayer(dp(2f),0f,dp(1f),Color.argb(110,0,0,0))
         frame.addView(this,FrameLayout.LayoutParams(-1,dp(48),Gravity.TOP).apply { topMargin=insetTop+dp(10); marginStart=dp(72); marginEnd=dp(72) })
     }
+    /** Runs [action] once a button's little flourish has had a moment to show. */
+    private fun after(ms: Long, action: () -> Unit) { if(moving) frame.postDelayed({ if(!isDestroyed) action() },ms) else action() }
+    /** The red add button in its sunburst. It throws doodles before it opens the photos. */
     private fun addButton(label: String, action: () -> Unit) {
-        frame.addView(RoundButton(this,Doodle.PLUS,label,RoundButton.Style.RED).apply { setOnClickListener { action() } },
-            FrameLayout.LayoutParams(dp(64),dp(64),Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin=insetBottom+dp(16) })
+        frame.addView(RoundButton(this,Doodle.PLUS,label,RoundButton.Style.RED).apply { setOnClickListener { after(380,action) } },
+            FrameLayout.LayoutParams(dp(100),dp(100),Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin=insetBottom+dp(4) })
     }
     /** Previous and next, either side of the add button: pages in a book, books on the desk, months on the calendar. */
     private fun arrows(what: String, onPrev: () -> Unit, onNext: () -> Unit): Pair<View,View> {
-        val prev=RoundButton(this,Doodle.PREV,"Previous $what").apply { setOnClickListener { onPrev() } }
-        val next=RoundButton(this,Doodle.NEXT,"Next $what").apply { setOnClickListener { onNext() } }
-        frame.addView(prev,FrameLayout.LayoutParams(dp(54),dp(54),Gravity.BOTTOM or Gravity.START).apply { bottomMargin=insetBottom+dp(21); marginStart=dp(44) })
-        frame.addView(next,FrameLayout.LayoutParams(dp(54),dp(54),Gravity.BOTTOM or Gravity.END).apply { bottomMargin=insetBottom+dp(21); marginEnd=dp(44) })
+        val prev=RoundButton(this,Doodle.PREV,"Previous $what").apply { setOnClickListener { onPrev() }; translationX=-dp(100f) }
+        val next=RoundButton(this,Doodle.NEXT,"Next $what").apply { setOnClickListener { onNext() }; translationX=dp(100f) }
+        frame.addView(prev,FrameLayout.LayoutParams(dp(50),dp(50),Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin=insetBottom+dp(29) })
+        frame.addView(next,FrameLayout.LayoutParams(dp(50),dp(50),Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin=insetBottom+dp(29) })
         return prev to next
     }
     private fun deskButtons() {
-        corner(RoundButton(this,Doodle.BOOK,"Books",if(calendarMode) RoundButton.Style.GLASS else RoundButton.Style.WHITE).apply {
-            isSelected=!calendarMode; setOnClickListener { if(calendarMode) { calendarMode=false; desk() } } },start=14)
-        corner(RoundButton(this,Doodle.CALENDAR,"Calendar",if(calendarMode) RoundButton.Style.WHITE else RoundButton.Style.GLASS).apply {
-            isSelected=calendarMode; setOnClickListener { if(!calendarMode) { calendarMode=true; desk() } } },start=64)
+        val books=RoundButton(this,Doodle.BOOK,"Books",if(calendarMode) RoundButton.Style.WHITE else RoundButton.Style.ON)
+        val days=RoundButton(this,Doodle.CALENDAR,"Calendar",if(calendarMode) RoundButton.Style.ON else RoundButton.Style.WHITE)
+        // The chosen one turns yellow straight away; the screen changes once the icon has hopped.
+        books.apply { isSelected=!calendarMode; setOnClickListener { if(calendarMode) { look=RoundButton.Style.ON; days.look=RoundButton.Style.WHITE; after(240) { calendarMode=false; desk() } } } }
+        days.apply { isSelected=calendarMode; setOnClickListener { if(!calendarMode) { look=RoundButton.Style.ON; books.look=RoundButton.Style.WHITE; after(240) { calendarMode=true; desk() } } } }
+        corner(books,start=14); corner(days,start=68)
         corner(RoundButton(this,Doodle.MORE,"Book options").apply { setOnClickListener { menu() } },end=14)
     }
 
@@ -291,13 +291,13 @@ class MainActivity : Activity(), ThingHost {
         val uncover=cover(scrim)
         val close={ frame.removeView(scrim); uncover(); closeNote=null; if(openDialog===scrim) openDialog=null }
         openDialog=scrim
-        val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=pill(Color.WHITE,dp(22f)); setPadding(dp(22),dp(22),dp(18),dp(12)); elevation=dp(10f); isClickable=true }
-        card.addView(TextView(this).apply { text=heading; typeface=fonts.hand; setTextSize(TypedValue.COMPLEX_UNIT_SP,27f); setTextColor(Ink.INK); isAccessibilityHeading=true })
+        val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=PopDrawable(Color.WHITE,dp(22f),dp(2.5f),dp(6f)); setPadding(dp(22),dp(22),dp(24),dp(18)); isClickable=true }
+        card.addView(TextView(this).apply { text=heading; typeface=fonts.display; setTextSize(TypedValue.COMPLEX_UNIT_SP,23f); setTextColor(Ink.INK); isAccessibilityHeading=true })
         if(message!=null) card.addView(TextView(this).apply { text=message; typeface=fonts.sans; setTextSize(TypedValue.COMPLEX_UNIT_SP,15f); setTextColor(Ink.INK_2); setLineSpacing(0f,1.3f) },LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(6) })
         if(field!=null) card.addView(field,LinearLayout.LayoutParams(-1,dp(52)).apply { topMargin=dp(14); marginEnd=dp(4) })
         val row=LinearLayout(this).apply { gravity=Gravity.END or Gravity.CENTER_VERTICAL }
         cancel?.let { row.addView(QuietButton(this,it).apply { setOnClickListener { close() } }) }
-        row.addView(PrimaryButton(this,confirm).apply { minHeight=dp(48); minimumHeight=dp(48); setPadding(dp(22),0,dp(22),0); setOnClickListener { if(onConfirm()) close() } },LinearLayout.LayoutParams(-2,-2).apply { marginStart=dp(8) })
+        row.addView(PrimaryButton(this,confirm).apply { minHeight=dp(52); minimumHeight=dp(52); setPadding(dp(22),0,dp(26),dp(4)); setOnClickListener { if(onConfirm()) close() } },LinearLayout.LayoutParams(-2,-2).apply { marginStart=dp(8) })
         card.addView(row,LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(18) })
         scrim.addView(card,FrameLayout.LayoutParams(-1,-2,Gravity.CENTER).apply { setMargins(dp(22),0,dp(22),0) })
         if(cancel!=null) scrim.setOnClickListener { close() }
@@ -312,7 +312,7 @@ class MainActivity : Activity(), ThingHost {
         val field=EditText(this).apply {
             setText(initial); setSelection(initial.length); hint="Trips, Home, Grandma’s…"; typeface=fonts.sans; setTextSize(TypedValue.COMPLEX_UNIT_SP,16f); setTextColor(Ink.INK); setHintTextColor(Ink.INK_3)
             isSingleLine=true; filters=arrayOf(InputFilter.LengthFilter(40)); inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS; imeOptions=EditorInfo.IME_ACTION_DONE
-            background=pill(Color.WHITE,dp(12f),Ink.LINE,dp(1.5f)); setPadding(dp(14),0,dp(14),0); contentDescription=heading
+            background=pill(Color.WHITE,dp(12f),Ink.INK,dp(2f)); setPadding(dp(14),0,dp(14),0); contentDescription=heading
         }
         ask(heading,message,confirm,"Cancel",field) { val name=field.text.toString().trim(); if(name.isEmpty()) { field.requestFocus(); false } else { onName(name); true } }
         field.setOnEditorActionListener { _,_,_ -> val name=field.text.toString().trim(); if(name.isNotEmpty()) { closeNote?.invoke(); onName(name) }; true }
@@ -325,13 +325,14 @@ class MainActivity : Activity(), ThingHost {
         val uncover=cover(scrim)
         openDialog=scrim
         val panel=LinearLayout(this).apply {
-            orientation=LinearLayout.VERTICAL; isClickable=true; elevation=dp(12f); setPadding(dp(16),dp(10),dp(16),insetBottom+dp(20))
-            background=GradientDrawable().apply { setColor(Color.WHITE); cornerRadii=floatArrayOf(dp(24f),dp(24f),dp(24f),dp(24f),0f,0f,0f,0f) }
+            orientation=LinearLayout.VERTICAL; isClickable=true; setPadding(dp(19),dp(12),dp(19),insetBottom+dp(23))
+            background=GradientDrawable().apply { setColor(Color.WHITE); setStroke(dp(3),Ink.INK); cornerRadii=floatArrayOf(dp(26f),dp(26f),dp(26f),dp(26f),0f,0f,0f,0f) }
         }
-        panel.addView(View(this).apply { background=pill(Ink.LINE,dp(2f)) },LinearLayout.LayoutParams(dp(40),dp(4)).apply { gravity=Gravity.CENTER_HORIZONTAL; bottomMargin=dp(10) })
+        panel.addView(View(this).apply { background=pill(Ink.INK,dp(2f)) },LinearLayout.LayoutParams(dp(40),dp(4)).apply { gravity=Gravity.CENTER_HORIZONTAL; bottomMargin=dp(10) })
         val close={ frame.removeView(scrim); uncover(); closeNote=null; if(openDialog===scrim) openDialog=null }
         build(panel,close)
-        scrim.addView(panel,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
+        // The ink border runs along the top; its sides and bottom sit just off the screen.
+        scrim.addView(panel,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM).apply { setMargins(-dp(3),0,-dp(3),-dp(3)) })
         scrim.setOnClickListener { close() }
         closeNote=close
         if(moving) { scrim.alpha=0f; scrim.animate().alpha(1f).setDuration(150).start(); panel.translationY=dp(300f); panel.animate().translationY(0f).setDuration(240).setInterpolator(DecelerateInterpolator(2f)).start() }
@@ -345,13 +346,13 @@ class MainActivity : Activity(), ThingHost {
             setOnClickListener { action() }
         },LinearLayout.LayoutParams(-1,dp(54)))
     }
-    /** The five papers, as round samples; the book's own is ringed. */
+    /** The five patterns, as round samples; the book's own is ringed. */
     private fun paperRow(current: Paper, onPick: (Paper) -> Unit) = LinearLayout(this).apply {
         gravity=Gravity.CENTER_VERTICAL
         Paper.entries.forEach { p ->
             addView(LinearLayout(this@MainActivity).apply {
                 orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER_HORIZONTAL
-                addView(Swatch(this@MainActivity,p).apply { isSelected=p==current; setOnClickListener { onPick(p) } },LinearLayout.LayoutParams(dp(48),dp(48)))
+                addView(Swatch(this@MainActivity,p).apply { isSelected=p==current; setOnClickListener { onPick(p) } },LinearLayout.LayoutParams(dp(52),dp(52)))
                 addView(TextView(this@MainActivity).apply { text=p.label.uppercase(); typeface=fonts.mono; setTextSize(TypedValue.COMPLEX_UNIT_SP,9f); letterSpacing=.12f; setTextColor(Ink.INK_2); importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO })
             },LinearLayout.LayoutParams(0,-2,1f))
         }
@@ -399,14 +400,14 @@ class MainActivity : Activity(), ThingHost {
 
     // ---------- welcome ----------
     private fun onboarding() {
-        flow("onboarding",Paper.PLAIN)
+        flow("onboarding",Paper.GINGHAM)
         val field=WelcomeField(this)
         frame.addView(field,0,FrameLayout.LayoutParams(-1,-1))
-        frame.addView(View(this).apply { background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(Ink.alpha(Paper.PLAIN.ground,0f),Ink.alpha(Paper.PLAIN.ground,.95f),Paper.PLAIN.ground)) },
+        frame.addView(View(this).apply { background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(Ink.alpha(Ink.PAPER,0f),Ink.alpha(Ink.PAPER,.95f),Ink.PAPER)) },
             1,FrameLayout.LayoutParams(-1,(resources.displayMetrics.heightPixels*.5f).toInt(),Gravity.BOTTOM))
         add(label("Shelf",Ink.INK).apply { gravity=Gravity.CENTER_HORIZONTAL },top=14)
         spring()
-        val heading=title("A book for the\nsmall things.",42f)
+        val heading=title("A book for the\nsmall things.",44f)
         val intro=prose("Photograph the things you keep. Shelf cuts them out and sticks them in your books, only on this phone.")
         add(heading); add(intro,top=12)
         val footer=FrameLayout(this)
@@ -438,6 +439,14 @@ class MainActivity : Activity(), ThingHost {
 
     // ---------- the desk: books ----------
     private fun toDesk() { arranging=false; calendarMode=false; desk() }
+    /** A big outlined title across the top of the desk or calendar. */
+    private fun bigTitle(value: String) = OutlinedTitle(this,fonts.display,44f).apply { text=value }.also {
+        frame.addView(it,FrameLayout.LayoutParams(-1,-2,Gravity.TOP).apply { topMargin=insetTop+dp(66); marginStart=dp(16); marginEnd=dp(16) })
+    }
+    /** A little yellow pill under a big title. */
+    private fun badge(value: String, color: Int=Ink.SUN) = text(value,12.5f,Typeface.DEFAULT_BOLD,Ink.INK,1f).apply {
+        background=PopDrawable(color,dp(14f),dp(2f),dp(2f)); setPadding(dp(11),dp(4),dp(13),dp(6)); gravity=Gravity.CENTER
+    }.also { frame.addView(it,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin=insetTop+dp(126) }) }
     private fun desk() {
         val books=store.books().ifEmpty { listOf(store.firstBook()) }
         val all=try { store.all() } catch(e: Exception) { emptyList() }
@@ -446,44 +455,46 @@ class MainActivity : Activity(), ThingHost {
         deskButtons()
         if(calendarMode) return calendar(books,all)
         bookIndex=bookIndex.coerceIn(0,books.size-1)
-        val heading=text("",40f,fonts.hand,Color.WHITE,1f).apply { gravity=Gravity.CENTER; maxLines=1; ellipsize=TextUtils.TruncateAt.END; isAccessibilityHeading=true }
-        frame.addView(heading,FrameLayout.LayoutParams(-1,-2,Gravity.TOP).apply { topMargin=insetTop+dp(72); marginStart=dp(40); marginEnd=dp(40) })
-        val sub=text("",12.5f,fonts.medium,Ink.alpha(Color.WHITE,.7f)).apply { gravity=Gravity.CENTER }
-        frame.addView(sub,FrameLayout.LayoutParams(-1,-2,Gravity.TOP).apply { topMargin=insetTop+dp(122) })
-        val covers=books.map { b -> val items=all.filter { it.book==b.id }; CoverView(this,b,items,PageLayout.pages(items.size),fonts.hand,loader).apply { isClickable=true; isFocusable=true } } +
+        bigTitle("My books")
+        badge("${count(books.size,"book")} · ${count(all.size)}")
+        val covers=books.map { b -> CoverView(this,b,all.filter { it.book==b.id },fonts.hand,loader).apply { isClickable=true; isFocusable=true } } +
             GhostBook(this,fonts.hand).apply { contentDescription="New book"; isClickable=true; isFocusable=true }
         lateinit var carousel: DeskCarousel
+        val burst=BurstBadge(this,fonts.display)
         val dots=LinearLayout(this).apply { gravity=Gravity.CENTER; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
-        books.forEach { _ -> dots.addView(View(this),LinearLayout.LayoutParams(dp(7),dp(7)).apply { marginStart=dp(4); marginEnd=dp(4) }) }
-        val hint=text("",12.5f,fonts.sans,Ink.alpha(Color.WHITE,.62f)).apply { gravity=Gravity.CENTER }
-        val start=text("start\nhere",21f,fonts.hand,Color.WHITE,.95f).apply { rotation=-5f; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
+        books.forEach { _ -> dots.addView(View(this),LinearLayout.LayoutParams(dp(12),dp(12)).apply { marginStart=dp(4); marginEnd=dp(4) }) }
+        val hint=text("",21f,fonts.hand,Color.WHITE,1f).apply { gravity=Gravity.CENTER }
+        val start=text("start\nhere",23f,fonts.hand,Color.WHITE,.95f).apply { rotation=-5f; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         val arrow=ArrowView(this)
         val (prev,next)=arrows("book",{ carousel.go(carousel.index-1) },{ carousel.go(carousel.index+1) })
+        var shown=-1
         fun show(i: Int) {
             bookIndex=i
             val book=books[i]; val items=all.filter { it.book==book.id }
-            heading.text=book.name
-            sub.text=if(items.isEmpty()) "Empty, for now" else "${count(items.size)} · ${count(PageLayout.pages(items.size),"page")}"
-            for(k in 0 until dots.childCount) dots.getChildAt(k).background=if(k==i) pill(Color.WHITE,dp(4f)) else pill(Color.TRANSPARENT,dp(4f),Ink.alpha(Color.WHITE,.6f),dp(1.3f))
-            hint.text=(if(items.isEmpty()) "Photograph something you kept" else "Tap to open")+(if(books.size>1) " · swipe for other books" else "")
-            prev.visibility=if(i>0) View.VISIBLE else View.GONE; next.visibility=if(i<books.size-1) View.VISIBLE else View.GONE
+            burst.show(items.size,spin=shown>=0 && shown!=i); shown=i
+            for(k in 0 until dots.childCount) dots.getChildAt(k).apply {
+                background=pill(if(k==i) Ink.SUN else Color.WHITE,dp(6f),Ink.INK,dp(2f))
+                layoutParams=(layoutParams as LinearLayout.LayoutParams).apply { width=dp(if(k==i) 28 else 12) }
+            }
+            hint.text=(if(items.isEmpty()) "photograph something you kept" else "tap to open")+" ✶"
+            prev.visibility=if(i>0) View.VISIBLE else View.INVISIBLE; next.visibility=if(i<books.size-1) View.VISIBLE else View.INVISIBLE
             val first=all.isEmpty() && i==0
             start.visibility=if(first) View.VISIBLE else View.GONE; arrow.visibility=start.visibility
             covers[i].contentDescription="${book.name}, ${count(items.size)}. Open book"
         }
-        carousel=DeskCarousel(this,covers,bookIndex,onPick={ i -> if(i>=books.size) { carousel.go(books.size-1); newBook() } else show(i) },
-            onOpen={ i -> if(i>=books.size) newBook() else openPage(books[i].id,0,peek=true) })
-        frame.addView(carousel,FrameLayout.LayoutParams(-1,-1).apply { topMargin=insetTop+dp(166); bottomMargin=insetBottom+dp(146) })
-        frame.addView(dots,FrameLayout.LayoutParams(-1,dp(10),Gravity.BOTTOM).apply { bottomMargin=insetBottom+dp(126) })
-        frame.addView(hint,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM).apply { bottomMargin=insetBottom+dp(98) })
-        frame.addView(start,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.START).apply { bottomMargin=insetBottom+dp(34); marginStart=dp(34) })
-        frame.addView(arrow,FrameLayout.LayoutParams(dp(70),dp(40),Gravity.BOTTOM or Gravity.START).apply { bottomMargin=insetBottom+dp(22); marginStart=dp(86) })
+        carousel=DeskCarousel(this,covers,bookIndex,burst,onPick={ i -> if(i>=books.size) { carousel.go(books.size-1); newBook() } else show(i) },
+            onOpen={ i -> if(i>=books.size) newBook() else (covers[i] as CoverView).open { if(page=="desk") openPage(books[i].id,0,peek=true) } })
+        frame.addView(carousel,FrameLayout.LayoutParams(-1,-1).apply { topMargin=insetTop+dp(170); bottomMargin=insetBottom+dp(166) })
+        frame.addView(dots,FrameLayout.LayoutParams(-1,dp(12),Gravity.BOTTOM).apply { bottomMargin=insetBottom+dp(148) })
+        frame.addView(hint,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM).apply { bottomMargin=insetBottom+dp(108) })
+        frame.addView(start,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.START).apply { bottomMargin=insetBottom+dp(40); marginStart=dp(22) })
+        frame.addView(arrow,FrameLayout.LayoutParams(dp(70),dp(40),Gravity.BOTTOM or Gravity.START).apply { bottomMargin=insetBottom+dp(30); marginStart=dp(72) })
         prev.bringToFront(); next.bringToFront()
         addButton("Add a thing") { startAdd(books[bookIndex].id,"desk") }
         show(bookIndex)
     }
     private fun newBook() = askName("A new book","What should it be called?","","Make the book") { name ->
-        try { store.addBook(name,Paper.entries[store.books().size%4]); bookIndex=store.books().size-1; calendarMode=false; desk() } catch(e: Exception) { error("That book couldn’t be made. Please try again.") }
+        try { store.addBook(name,Paper.entries[store.books().size%Paper.entries.size]); bookIndex=store.books().size-1; calendarMode=false; desk() } catch(e: Exception) { error("That book couldn’t be made. Please try again.") }
     }
     private fun menu() {
         val books=store.books(); val book=books.getOrNull(bookIndex) ?: return
@@ -491,7 +502,7 @@ class MainActivity : Activity(), ThingHost {
             sheetRow(panel,Doodle.NEW_BOOK,"New book") { close(); newBook() }
             if(!calendarMode) {
                 sheetRow(panel,Doodle.RENAME,"Rename “${book.name}”") { close(); askName("Rename",null,book.name,"Save") { name -> store.renameBook(book.id,name); desk() } }
-                panel.addView(label("Paper for “${book.name}”",Ink.INK_2),LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(8); marginStart=dp(10); bottomMargin=dp(8) })
+                panel.addView(label("Pattern for “${book.name}”",Ink.INK_2),LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(8); marginStart=dp(10); bottomMargin=dp(8) })
                 panel.addView(paperRow(book.paper) { p -> store.setPaper(book.id,p); desk(); menu() },LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(8) })
                 if(books.size>1) sheetRow(panel,Doodle.TRASH,"Delete “${book.name}”",danger=true) {
                     close()
@@ -505,46 +516,100 @@ class MainActivity : Activity(), ThingHost {
     }
 
     // ---------- the desk: calendar ----------
+    private var calHolder: FrameLayout?=null
+    private var calTitle: OutlinedTitle?=null
+    private var calBadge: TextView?=null
+    private var calItems: List<Keepsake> = emptyList()
     private fun calendar(books: List<Book>, all: List<Keepsake>) {
+        frame.background=CheckerBackground(Ink.BLUSH,Color.rgb(255,182,212),dp(20f))
+        bars(false)
+        calItems=all
+        calTitle=bigTitle("")
+        calBadge=badge("",Color.WHITE)
+        calHolder=FrameLayout(this).apply { clipChildren=false }
+        frame.addView(calHolder,FrameLayout.LayoutParams(-1,-1).apply { topMargin=insetTop+dp(166); bottomMargin=insetBottom+dp(112) })
+        arrows("month",{ shiftMonth(-1) },{ shiftMonth(1) })
+        addButton("Add a thing") { startAdd(books[bookIndex.coerceIn(0,books.size-1)].id,"desk") }
+        showMonth(0)
+    }
+    /** Shows the current month. Going to another month ([dir] ±1) tears the old one off and drops the new one in. */
+    private fun showMonth(dir: Int) {
+        val holder=calHolder ?: return
         val now=Calendar.getInstance(); val thisMonth=now.get(Calendar.YEAR)*12+now.get(Calendar.MONTH)
         val shown=if(month<0) thisMonth else month; val y=shown/12; val m=shown%12
-        val byDay=all.mapNotNull { item ->
+        val byDay=calItems.mapNotNull { item ->
             val c=Calendar.getInstance().apply { timeInMillis=item.created }
             if(c.get(Calendar.YEAR)==y && c.get(Calendar.MONTH)==m) c.get(Calendar.DAY_OF_MONTH) to item else null
         }.groupBy({ it.first },{ it.second })
         val kept=byDay.values.sumOf { it.size }
-        frame.addView(text(CalendarSheet.monthName(m),40f,fonts.hand,Color.WHITE,1f).apply { gravity=Gravity.CENTER; isAccessibilityHeading=true },
-            FrameLayout.LayoutParams(-1,-2,Gravity.TOP).apply { topMargin=insetTop+dp(72) })
-        frame.addView(text("$y · ${if(kept>0) count(kept)+" kept" else "nothing kept yet"}",12.5f,fonts.medium,Ink.alpha(Color.WHITE,.7f)).apply { gravity=Gravity.CENTER },
-            FrameLayout.LayoutParams(-1,-2,Gravity.TOP).apply { topMargin=insetTop+dp(122) })
+        calTitle?.apply { text=CalendarSheet.monthName(m); if(dir!=0) pop() }
+        calBadge?.text="$y · ${if(kept>0) count(kept)+" kept" else "nothing kept yet"}"
         val today=if(shown==thisMonth) now.get(Calendar.DAY_OF_MONTH) else -1
-        val sheet=CalendarSheet(this,y,m,byDay,today,fonts.hand,fonts.mono,loader,photoLoader) { day -> openDay(m,day,byDay[day].orEmpty()) }
-        sheet.onSwipe={ dir -> shiftMonth(dir) }
-        frame.addView(sheet,FrameLayout.LayoutParams(-1,-1).apply { topMargin=insetTop+dp(150); bottomMargin=insetBottom+dp(96) })
-        arrows("month",{ shiftMonth(-1) },{ shiftMonth(1) })
-        addButton("Add a thing") { startAdd(books[bookIndex.coerceIn(0,books.size-1)].id,"desk") }
+        val sheet=CalendarSheet(this,y,m,byDay,today,loader) { cell -> openDay(m,cell) }
+        sheet.onSwipe={ k -> shiftMonth(k) }
+        val old=if(holder.childCount>0) holder.getChildAt(holder.childCount-1) else null
+        holder.addView(sheet,FrameLayout.LayoutParams(-1,-1))
+        if(old!=null && dir!=0 && moving) {
+            old.z=1f
+            tween(620,android.view.animation.AccelerateInterpolator(1.4f),update={ t ->
+                old.translationX=-dir*keys(t,0f,dp(40f),dp(340f)); old.translationY=keys(t,0f,-dp(14f),dp(300f)); old.rotation=-dir*keys(t,0f,4f,28f)
+            },end={ holder.removeView(old) })
+            sheet.alpha=0f
+            tween(560,spring,160,update={ t -> sheet.alpha=min(1f,t*2); sheet.translationX=dir*dp(40f)*(1-t); sheet.translationY=-dp(60f)*(1-t); sheet.rotation=dir*6f*(1-t) })
+        } else if(old!=null) holder.removeView(old)
+        holder.announceForAccessibility(CalendarSheet.monthName(m))
     }
     private fun shiftMonth(k: Int) {
         val now=Calendar.getInstance()
         month=(if(month<0) now.get(Calendar.YEAR)*12+now.get(Calendar.MONTH) else month)+k
-        desk()
+        if(page=="desk" && calendarMode && calHolder?.isAttachedToWindow==true) showMonth(k) else desk()
     }
-    private fun openDay(m: Int, day: Int, list: List<Keepsake>) {
+    /** A day's things: one opens straight away; more come out onto their own sheet. */
+    private fun openDay(m: Int, cell: DayCell) {
+        val list=cell.items
         if(list.size==1) return thing(list[0].id,"calendar")
-        val books=store.books()
-        sheet { panel,close ->
-            panel.addView(text("${CalendarSheet.monthName(m)} $day",26f,fonts.hand,Ink.INK,1f).apply { isAccessibilityHeading=true },LinearLayout.LayoutParams(-1,-2).apply { marginStart=dp(10); bottomMargin=dp(6) })
-            list.forEach { item ->
-                val row=LinearLayout(this).apply { gravity=Gravity.CENTER_VERTICAL; background=ripple(dp(12f)); isClickable=true; isFocusable=true; setPadding(dp(8),0,dp(10),0); contentDescription=item.title; setOnClickListener { close(); thing(item.id,"calendar") } }
-                val art=StickerView(this,0f,bottom=false)
-                row.addView(art,LinearLayout.LayoutParams(dp(48),dp(48)))
-                loader(item,dp(96)) { art.show(it,false) }
-                row.addView(text(item.title,16f,fonts.medium,Ink.INK).apply { maxLines=1; ellipsize=TextUtils.TruncateAt.END },LinearLayout.LayoutParams(0,-2,1f).apply { marginStart=dp(12) })
-                row.addView(text(books.find { it.id==item.book }?.name ?: "",13f,fonts.sans,Ink.INK_3))
-                panel.addView(row,LinearLayout.LayoutParams(-1,dp(60)))
+        closeNote?.invoke()
+        val scrim=FrameLayout(this).apply { setBackgroundColor(Color.argb(115,23,24,31)); isClickable=true }
+        frame.addView(scrim,FrameLayout.LayoutParams(-1,-1))
+        val uncover=cover(scrim)
+        openDialog=scrim
+        val panel=FrameLayout(this).apply {
+            isClickable=true; clipChildren=false
+            background=android.graphics.drawable.LayerDrawable(arrayOf(PaperBackground(Paper.STRIPES,density),GradientDrawable().apply { setColor(Color.TRANSPARENT); setStroke(dp(3),Ink.INK); cornerRadius=dp(28f) }))
+            clipToOutline=true; outlineProvider=object : ViewOutlineProvider() { override fun getOutline(v: View, o: Outline) { o.setRoundRect(0,0,v.width,v.height+dp(40),dp(28f)) } }
+        }
+        val column=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(20),dp(20),dp(20),insetBottom+dp(24)); clipChildren=false; clipToPadding=false }
+        val date=Calendar.getInstance().apply { clear(); set(calYear(),m,cell.day) }
+        column.addView(text(stampDate(date.timeInMillis),13f,Typeface.create(Typeface.MONOSPACE,Typeface.BOLD),Ink.ACCENT,1f).apply {
+            letterSpacing=.12f; background=pill(Color.argb(110,255,255,255),dp(6f),Ink.ACCENT,dp(2.2f)); setPadding(dp(10),dp(5),dp(10),dp(5)); rotation=-4f
+        },LinearLayout.LayoutParams(-2,-2))
+        column.addView(text(date.getDisplayName(Calendar.DAY_OF_WEEK,Calendar.LONG,resources.configuration.locales[0]) ?: "",30f,fonts.display,Ink.INK,1f).apply { isAccessibilityHeading=true },
+            LinearLayout.LayoutParams(-2,-2).apply { topMargin=dp(12) })
+        column.addView(text("${count(list.size)} kept",12.5f,Typeface.DEFAULT_BOLD,Ink.INK,1f).apply { background=PopDrawable(Color.WHITE,dp(14f),dp(2f),dp(2f)); setPadding(dp(11),dp(4),dp(13),dp(6)) },
+            LinearLayout.LayoutParams(-2,-2).apply { topMargin=dp(6) })
+        lateinit var close: () -> Unit
+        val spread=DaySpread(this,list,fonts.hand,loader) { item -> close(); thing(item.id,"calendar") }
+        column.addView(spread,LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(18) })
+        panel.addView(ScrollView(this).apply { isVerticalScrollBarEnabled=false; clipChildren=false; addView(column) },FrameLayout.LayoutParams(-1,-1))
+        panel.addView(RoundButton(this,Doodle.X,"Close").apply { setOnClickListener { close() } },FrameLayout.LayoutParams(dp(50),dp(50),Gravity.TOP or Gravity.END).apply { setMargins(0,dp(14),dp(14),0) })
+        scrim.addView(panel,FrameLayout.LayoutParams(-1,(resources.displayMetrics.heightPixels*.74f).toInt(),Gravity.BOTTOM))
+        close={
+            closeNote=null; if(openDialog===scrim) openDialog=null
+            if(moving) { scrim.animate().alpha(0f).setDuration(220).start(); panel.animate().translationY(panel.height.toFloat()).setDuration(280).setInterpolator(android.view.animation.AccelerateInterpolator()).withEndAction { frame.removeView(scrim); uncover() }.start() }
+            else { frame.removeView(scrim); uncover() }
+        }
+        scrim.setOnClickListener { close() }
+        closeNote=close
+        panel.post {
+            if(moving) {
+                scrim.alpha=0f; scrim.animate().alpha(1f).setDuration(200).start()
+                panel.translationY=panel.height.toFloat()
+                panel.animate().translationY(0f).setDuration(420).setInterpolator(android.view.animation.OvershootInterpolator(.9f)).withEndAction { spread.arrive(cell,0) }.start()
             }
         }
+        scrim.announceForAccessibility("${CalendarSheet.monthName(m)} ${cell.day}, ${count(list.size)}")
     }
+    private fun calYear(): Int { val now=Calendar.getInstance(); return (if(month<0) now.get(Calendar.YEAR)*12+now.get(Calendar.MONTH) else month)/12 }
 
     // ---------- a book's pages ----------
     private fun openPage(bookId: String, index: Int, fresh: String?=null, peek: Boolean=false) {
@@ -572,7 +637,7 @@ class MainActivity : Activity(), ThingHost {
             corner(RoundButton(this,Doodle.CHECK,"Done arranging").apply { setOnClickListener { arranging=false; openPage(bookId,pageIndex) } },end=14)
             arrangeBar(book,items)
         } else {
-            corner(RoundButton(this,Doodle.PENCIL,"Arrange this page").apply { setOnClickListener { arranging=true; openPage(bookId,pageIndex); snack("Drag to move · twist with the round handle") } },end=14)
+            corner(RoundButton(this,Doodle.PENCIL,"Arrange this page").apply { setOnClickListener { after(300) { arranging=true; openPage(bookId,pageIndex); snack("Drag to move · twist with the round handle") } } },end=14)
             nav=arrows("page",{ view.turn(-1) },{ view.turn(1) })
             nav.first.visibility=if(pageIndex>0) View.VISIBLE else View.GONE; nav.second.visibility=if(pageIndex<pages-1) View.VISIBLE else View.GONE
             addButton("Add a thing to ${book.name}") { startAdd(book.id,"page") }
@@ -584,14 +649,14 @@ class MainActivity : Activity(), ThingHost {
     }
     private fun arrangeBar(book: Book, items: List<Keepsake>) {
         val bar=LinearLayout(this).apply {
-            gravity=Gravity.CENTER_VERTICAL; elevation=dp(12f); isClickable=true; setPadding(dp(10),dp(12),dp(10),insetBottom+dp(14))
-            background=GradientDrawable().apply { setColor(Color.WHITE); cornerRadii=floatArrayOf(dp(22f),dp(22f),dp(22f),dp(22f),0f,0f,0f,0f) }
+            gravity=Gravity.CENTER_VERTICAL; isClickable=true; setPadding(dp(13),dp(14),dp(13),insetBottom+dp(17))
+            background=GradientDrawable().apply { setColor(Color.WHITE); setStroke(dp(3),Ink.INK); cornerRadii=floatArrayOf(dp(24f),dp(24f),dp(24f),dp(24f),0f,0f,0f,0f) }
         }
         bar.addView(paperRow(book.paper) { p -> store.setPaper(book.id,p); openPage(book.id,pageIndex) },LinearLayout.LayoutParams(0,-2,1f))
         bar.addView(QuietButton(this,"Tidy up").apply { contentDescription="Tidy up this page"; setOnClickListener {
             items.drop(pageIndex*PageLayout.PER).take(PageLayout.PER).forEach { store.place(it.id,null) }; openPage(book.id,pageIndex)
         } })
-        frame.addView(bar,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
+        frame.addView(bar,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM).apply { setMargins(-dp(3),0,-dp(3),-dp(3)) })
     }
     override fun open(thing: ThingView) = thing(thing.item.id,"page")
     override fun choose(thing: ThingView) {
