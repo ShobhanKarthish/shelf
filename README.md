@@ -31,11 +31,12 @@ Shelf is a native Android app for keeping the small things that matter: a ticket
 
 - **Cut-outs on your phone.** ML Kit subject segmentation finds the objects in a photo and draws a dashed cut line around each. Tap one, or press and hold, then **Snip it out**. When a photo holds a single object, it is selected for you.
 - **Whole photos too.** Keep the full photo as a print, by choice or when an object can't be separated.
-- **Books.** Things go into books you swipe between on a desk. Each cover is made from its own things, with the book's name in cut-out letters.
+- **Books.** Things go into books you swipe between on a desk. Each book has a bold pattern on its cover, its own things stuck on the front and its name in cut-out letters. Tap it and the cover swings open.
 - **Pages that fill up.** Four things to a page, each with its name on a kraft tag and the start of its story in pen. Drag a page and it turns around the spine like paper, or use the arrows.
-- **Arrange a page.** Drag things, twist them, and choose the book's paper: grid, dots, lined, plain or cork.
-- **A calendar.** See each month with the things you kept on the days you kept them.
-- **A page for each thing.** The sticker, the photo it was cut from, its date and its story. Edit, move or delete it from there.
+- **Arrange a page.** Drag things, twist them, and choose the book's pattern: grid, dots, stripes, checker or gingham.
+- **A calendar.** Each day shows the things kept on it, fanned or piled by how many there are, and lights up by how full it was. Tap a day and its things jump out onto a sheet of their own.
+- **A page for each thing.** The sticker in its own sunshine, the photo it was cut from, its date and its story. Mark it a favourite, or edit, move or delete it from there.
+- **Things that move when you touch them.** Buttons press down onto their shadows, stickers peel up, tags swing, stamps thunk and adding throws a handful of doodles. Nothing moves on its own.
 - **Private by design.** No account and no uploads. Photos and details stay in app-private storage.
 - **Accessible.** Screen reader labels, buttons as an alternative to every gesture, 48 dp touch targets, and no motion when system animations are off.
 
@@ -142,14 +143,16 @@ Shelf uses Kotlin, native Android views, SQLite and ML Kit subject segmentation,
 | File | What it does |
 | --- | --- |
 | `MainActivity.kt` | Every screen: the desk, pages, the calendar, a thing's page, and adding, editing and saving. |
-| `BookViews.kt` | Pages and the page turn, covers, the calendar sheet and a thing on its page. |
-| `Scrap.kt` | Paper, grain, tape, pins, stamps, kraft tags, pen notes and cut-out letters. |
+| `BookViews.kt` | Round buttons, pages and the page turn, covers, and a thing on its page. |
+| `Calendar.kt` | The month, its day cells and the sheet a day's things come out onto. |
+| `Motion.kt` | The press, doodle bursts, outlined titles, the count badge and the desk, calendar and sunshine backgrounds. |
+| `Scrap.kt` | Book patterns, outlined cards and stickers, tape, stamps, kraft tags, pen notes and cut-out letters. |
 | `SubjectSelectionView.kt` | The photo, its cut lines, tap selection and the snip animation. |
 | `Stickers.kt` | Cuts stickers on background threads and caches them. |
 | `Welcome.kt` | The drawn keepsakes on the welcome screen. |
 | `CollageViews.kt` | Buttons, sticker views and other shared components. |
-| `Collage.kt` | Palette, fonts, icons and the scissors. |
-| `ShelfStore.kt` | Local storage for books, things, their images and where they sit on a page. |
+| `Collage.kt` | Palette, fonts, icons, doodles and the scissors. |
+| `ShelfStore.kt` | Local storage for books, things, their images, favourites and where they sit on a page. |
 
 ## Current limitations
 
@@ -161,4 +164,4 @@ Bug reports and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIB
 
 ## Credits
 
-Titles are set in [Patrick Hand](https://fonts.google.com/specimen/Patrick+Hand) by Patrick Wagesreiter, under the SIL Open Font License. Its license notice is in [licenses/](licenses/).
+Titles are set in [Bagel Fat One](https://fonts.google.com/specimen/Bagel+Fat+One) by the Bagel Fat Project Authors, and anything you write in [Patrick Hand](https://fonts.google.com/specimen/Patrick+Hand) by Patrick Wagesreiter. Both are under the SIL Open Font License; their license notices are in [licenses/](licenses/).
