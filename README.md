@@ -107,7 +107,7 @@ keyPassword=your-key-password
 SHELF_SIGNING_PROPERTIES=/absolute/path/to/release-signing.properties ./gradlew assembleRelease
 ```
 
-Back up the keystore and credentials securely: every future update must be signed with the same key. Never commit them. Increase `versionCode` in `app/build.gradle.kts` for every release; version `0.5.0` uses version code `6`.
+Back up the keystore and credentials securely: every future update must be signed with the same key. Never commit them. Increase `versionCode` in `app/build.gradle.kts` for every release; version `0.5.1` uses version code `7`.
 
 A release-signed APK cannot update a debug-signed installation. Use the matching `debug-upgrade` APK to update a development build without losing its books.
 
