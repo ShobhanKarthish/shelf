@@ -31,6 +31,9 @@ class DeskTest : InstrumentationTestCase() {
             instrumentation.waitForIdleSync()
             lateinit var field: EditText
             ui { field=views(activity.window.decorView).filterIsInstance<EditText>().single() }
+            // The dialog opens the real keyboard itself; let it finish arriving before pretending to be a bigger one.
+            Thread.sleep(1500)
+            instrumentation.waitForIdleSync()
             var keyboard=0
             ui {
                 // What a phone reports as its keyboard slides up: the same bars, with the keyboard over the bottom third.
