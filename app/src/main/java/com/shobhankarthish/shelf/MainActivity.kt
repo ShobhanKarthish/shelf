@@ -676,32 +676,50 @@ class MainActivity : Activity(), ThingHost {
         stage("thing",book.paper)
         relayout={ thing(id,from) }
         val k=min(resources.displayMetrics.widthPixels/360f,dp(1.3f))
+        // A thing gets its own sunshine, fanning out from behind it.
+        val sunshine=RaysBackground(insetTop+dp(62f)+ThingArt.HEIGHT*k*.48f)
+        frame.background=sunshine
         val column=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; clipChildren=false; clipToPadding=false }
-        val art=ThingArt(this,item,book.paper,k,fonts.hand)
+        val art=ThingArt(this,item,k)
         column.addView(art,LinearLayout.LayoutParams(-1,-2))
         loader(item,(260*k).toInt()) { art.showArt(it) }
         if(!item.framed) Stickers.background { val photo=decodeSampled(store.photo(id).path,720); if(photo!=null) runOnUiThread { art.showPhoto(photo) } }
-        if(item.story.isNotEmpty()) {
-            val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=pill(Color.WHITE,dp(3f)); elevation=dp(3f); setPadding(dp(18),dp(18),dp(18),dp(20)); rotation=-1f }
-            card.addView(label("The story",Ink.INK_2))
-            card.addView(text(item.story,16f,fonts.sans,Ink.INK,1.45f).apply { setTextIsSelectable(true) },LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(10) })
-            val holder=FrameLayout(this).apply { clipChildren=false }
-            holder.addView(card,FrameLayout.LayoutParams(-1,-2).apply { setMargins(dp(24),dp(10),dp(24),0) })
-            holder.addView(TapeView(this,book.paper,1),FrameLayout.LayoutParams(dp(70),dp(28),Gravity.TOP or Gravity.CENTER_HORIZONTAL))
-            column.addView(holder,LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(4) })
-        } else {
-            column.addView(text("+ add a story",20f,fonts.hand,if(onDark) Color.WHITE else Pen.BLUE).apply {
-                background=ripple(dp(12f)); setPadding(dp(12),dp(10),dp(12),dp(10)); isClickable=true; setOnClickListener { edit(item) }
-            },LinearLayout.LayoutParams(-2,-2).apply { marginStart=dp(16) })
+        column.addView(OutlinedTitle(this,fonts.display,34f).apply { text=item.title },LinearLayout.LayoutParams(-1,-2).apply { setMargins(dp(14),dp(2),dp(14),0) })
+        val card=LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL; setPadding(dp(18),dp(16),dp(22),dp(18))
+            background=android.graphics.drawable.LayerDrawable(arrayOf(PopDrawable(Color.WHITE,dp(16f),dp(2.5f),dp(4f)),RuledLines(dp(28f),dp(18f),dp(4f))))
         }
+        if(item.story.isNotEmpty()) card.addView(text(item.story,21f,fonts.hand,Pen.BLUE,1.12f).apply { setTextIsSelectable(true); setLineHeight(dp(28)) })
+        else card.addView(text("+ add a story",21f,fonts.hand,Pen.BLUE).apply { background=ripple(dp(12f)); isClickable=true; setOnClickListener { edit(item) } })
+        val chips=LinearLayout(this).apply { gravity=Gravity.CENTER_VERTICAL; setPadding(0,dp(14),0,0) }
+        chips.addView(metaChip(book.name,Ink.SKY) { thingBack() },LinearLayout.LayoutParams(-2,-2).apply { marginEnd=dp(8) })
+        var favourite=item.favourite
+        val star=StarDrawable(dp(16)).apply { on=favourite }
+        lateinit var fav: TextView
+        fav=metaChip("Favourite",if(favourite) Ink.SUN else Ink.PAPER) {
+            favourite=!favourite; star.on=favourite
+            (fav.background as PopDrawable).fill=if(favourite) Ink.SUN else Ink.PAPER
+            fav.contentDescription=if(favourite) "Favourite, on" else "Favourite, off"
+            star.spin()
+            if(favourite) Confetti.burst(fav,dp(20f),fav.height/2f,8,70f)
+            worker.execute { try { store.setFavourite(id,favourite) } catch(e: Exception) {} }
+        }.apply { setCompoundDrawablesRelative(star,null,null,null); compoundDrawablePadding=dp(6); contentDescription=if(favourite) "Favourite, on" else "Favourite, off" }
+        chips.addView(fav)
+        card.addView(chips)
+        column.addView(card,LinearLayout.LayoutParams(-1,-2).apply { setMargins(dp(18),dp(10),dp(18),0) })
         val scroller=ScrollView(this).apply { isVerticalScrollBarEnabled=false; clipToPadding=false; setPadding(0,insetTop+dp(62),0,insetBottom+dp(40)); addView(column) }
+        // The sunshine follows the thing as the page scrolls.
+        scroller.setOnScrollChangeListener { _,_,y,_,_ -> sunshine.centerY=insetTop+dp(62f)+ThingArt.HEIGHT*k*.48f-y; sunshine.invalidateSelf() }
         frame.addView(scroller,FrameLayout.LayoutParams(-1,-1))
-        frame.addView(View(this).apply { background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(book.paper.ground,book.paper.ground,Ink.alpha(book.paper.ground,0f))) },
-            FrameLayout.LayoutParams(-1,insetTop+dp(60)))
         val index=store.inBook(book.id).indexOfFirst { it.id==id }
         corner(RoundButton(this,Doodle.PREV,if(from=="calendar") "Back to the calendar" else "Back to ${book.name}").apply { setOnClickListener { thingBack() } },start=14)
         topLabel("${book.name} · page ${PageLayout.pageOf(index)+1}")
-        corner(RoundButton(this,Doodle.PENCIL,"Edit this thing").apply { setOnClickListener { edit(item) } },end=14)
+        corner(RoundButton(this,Doodle.PENCIL,"Edit this thing").apply { setOnClickListener { after(300) { edit(item) } } },end=14)
+    }
+    /** A small outlined pill under a thing's story. */
+    private fun metaChip(value: String, color: Int, action: () -> Unit) = text(value,13.5f,Typeface.DEFAULT_BOLD,Ink.INK,1f).apply {
+        background=PopDrawable(color,dp(16f),dp(2f),dp(2.5f)); pressDown(dp(2.5f)); setPadding(dp(12),dp(7),dp(15),dp(9)); gravity=Gravity.CENTER_VERTICAL
+        minHeight=dp(40); isClickable=true; isFocusable=true; setOnClickListener { action() }
     }
     private fun thingBack() {
         val item=thingId?.let { store.find(it) }
@@ -843,11 +861,10 @@ class MainActivity : Activity(), ThingHost {
         }
     }
     private fun review(message: String="") {
-        val paper=bookFor(draftBook).paper
         flow("review"); topBar("Step 1 of 2")
         add(title(if(framed) "The whole photo, then." else "Snipped.",32f),top=8)
         add(prose(if(framed) message.ifEmpty { "It will go in your book as a print." } else "Just the thing, ready for your book."),top=8)
-        val art=StickerView(this,if(framed) -3f else -3f,bottom=false,paper=if(framed) paper else null).apply { contentDescription=if(framed) "Your photo" else "Your object"; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES }
+        val art=StickerView(this,-3f,bottom=false,taped=framed).apply { contentDescription=if(framed) "Your photo" else "Your object"; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES }
         body.addView(art,LinearLayout.LayoutParams(-1,dp(300)).apply { topMargin=dp(24) })
         artOf(if(framed) original else cutout,framed,dp(360),art)
         spring()
@@ -857,9 +874,9 @@ class MainActivity : Activity(), ThingHost {
 
     // ---------- naming it ----------
     private fun chip(label: String, chosen: Boolean, action: () -> Unit) = Button(this).apply {
-        text=label; isAllCaps=false; typeface=fonts.medium; setTextSize(TypedValue.COMPLEX_UNIT_SP,14f); stateListAnimator=null
-        setTextColor(if(chosen) Color.WHITE else Ink.INK); minWidth=0; minimumWidth=0; minHeight=dp(44); minimumHeight=dp(44); setPadding(dp(16),0,dp(16),0)
-        background=RippleDrawable(ColorStateList.valueOf(Ink.alpha(Ink.INK,.1f)),if(chosen) pill(Ink.INK,dp(22f)) else pill(Color.WHITE,dp(22f),Ink.LINE,dp(1.2f)),null)
+        text=label; isAllCaps=false; typeface=Typeface.DEFAULT_BOLD; setTextSize(TypedValue.COMPLEX_UNIT_SP,14f)
+        setTextColor(if(chosen) Color.WHITE else Ink.INK); minWidth=0; minimumWidth=0; minHeight=dp(47); minimumHeight=dp(47); setPadding(dp(16),0,dp(19),dp(3))
+        background=PopDrawable(if(chosen) Ink.INK else Color.WHITE,dp(22f),dp(2f),dp(3f)); pressDown(dp(3f))
         isSelected=chosen; setOnClickListener { action() }
     }
     private fun form() {
@@ -868,22 +885,22 @@ class MainActivity : Activity(), ThingHost {
         if(editing!=null && item==null) { editing=null; return desk() }
         flow("form"); topBar(if(item!=null) "Editing" else "Step 2 of 2")
         add(title(if(item!=null) "Edit this thing" else "Name it",32f),top=8)
-        val art=StickerView(this,-4f,bottom=true,paper=if(framed) book.paper else null).apply { contentDescription=if(framed) "Your photo" else "Your object"; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES }
+        val art=StickerView(this,-4f,bottom=true,taped=framed).apply { contentDescription=if(framed) "Your photo" else "Your object"; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES }
         body.addView(art,LinearLayout.LayoutParams(-1,dp(170)).apply { topMargin=dp(10) })
         if(item!=null) loader(item,dp(340)) { art.show(it,true) } else artOf(if(framed) original else cutout,framed,dp(340),art)
         body.addView(StringView(this),LinearLayout.LayoutParams(-1,dp(26)))
         val tag=TagBackground(density)
         val name=EditText(this).apply {
             id=View.generateViewId(); setText(draftTitle); hint="name it…"; contentDescription="Name"; typeface=fonts.hand; setTextSize(TypedValue.COMPLEX_UNIT_SP,26f); setTextColor(Ink.INK); setHintTextColor(Ink.alpha(Ink.INK,.42f))
-            background=tag; setPadding(dp(32),0,dp(16),0); isSingleLine=true; filters=arrayOf(InputFilter.LengthFilter(120)); gravity=Gravity.CENTER_VERTICAL
+            background=tag; setPadding(dp(32),0,dp(19),dp(3)); isSingleLine=true; filters=arrayOf(InputFilter.LengthFilter(120)); gravity=Gravity.CENTER_VERTICAL
             inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES; imeOptions=EditorInfo.IME_ACTION_NEXT; rotation=-1.5f
             setOnFocusChangeListener { _,has -> tag.focused=has }
         }
-        body.addView(name,LinearLayout.LayoutParams(-1,dp(54)).apply { marginStart=dp(8); marginEnd=dp(24) })
+        body.addView(name,LinearLayout.LayoutParams(-1,dp(58)).apply { marginStart=dp(8); marginEnd=dp(24) })
         val nameError=text("↑ give it a name",18f,fonts.hand,Ink.ACCENT_DARK).apply { visibility=View.GONE; accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE }
         add(nameError,top=4)
         name.onEdit { nameError.visibility=View.GONE }
-        val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=pill(Color.WHITE,dp(3f)); elevation=dp(3f); setPadding(dp(16),dp(14),dp(16),dp(8)) }
+        val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=PopDrawable(Color.WHITE,dp(16f),dp(2.5f),dp(4f)); setPadding(dp(16),dp(14),dp(20),dp(12)) }
         val story=EditText(this).apply {
             id=View.generateViewId(); setText(draftStory); hint="A line or two, if you like."; typeface=fonts.sans; setTextSize(TypedValue.COMPLEX_UNIT_SP,15.5f); setTextColor(Ink.INK); setHintTextColor(Ink.INK_3)
             background=null; setPadding(0,dp(6),0,dp(6)); minLines=3; gravity=Gravity.TOP or Gravity.START; setLineSpacing(0f,1.35f); filters=arrayOf(InputFilter.LengthFilter(4000))
