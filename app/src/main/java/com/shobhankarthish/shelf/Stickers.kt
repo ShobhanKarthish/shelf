@@ -73,7 +73,8 @@ fun makeSticker(cutout: Bitmap, seed: Int): Bitmap? {
 
 /** A print with a plain white border. */
 fun polaroid(photo: Bitmap): Bitmap {
-    val side=photo.width*.05f; val bottom=photo.width*.16f
+    // Borders follow the short side, so a panorama doesn't get a deep bottom margin.
+    val m=min(photo.width,photo.height).toFloat(); val side=m*.05f; val bottom=m*.16f
     val w=(photo.width+2*side).roundToInt(); val h=(photo.height+side+bottom).roundToInt()
     val out=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888)
     val canvas=Canvas(out); val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)

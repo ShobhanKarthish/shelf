@@ -142,12 +142,17 @@ class SelectionTest : InstrumentationTestCase() {
             activity=restored as MainActivity
             instrumentation.waitForIdleSync()
             ui { assertEquals("review",field(activity,"page")); assertEquals(stored.width,(field(activity,"cutout") as Bitmap).width); assertTrue(button(activity,"Use this sticker").isEnabled) }
-            ui { button(activity,"Choose a different object").performClick() }
-            awaitCondition("Could not reselect") { (field(activity,"selectionView") as? SubjectSelectionView)?.subjects?.isNotEmpty()==true }
-            ui {
-                val again=field(activity,"selectionView") as SubjectSelectionView
-                if(again.subjects.size==1) assertEquals(0,again.selectedIndex) else assertNull(again.selectedIndex)
-                assertEquals(again.selectedIndex!=null,button(activity,"Snip it out").isEnabled)
+            // With one object there's nothing else to choose, so only the photo itself is offered as the alternative.
+            val single=stage.subjects.size==1
+            if(single) ui { assertTrue(views(activity.window.decorView).filterIsInstance<Button>().none { it.text.toString()=="Choose a different object" }) }
+            else {
+                ui { button(activity,"Choose a different object").performClick() }
+                awaitCondition("Could not reselect") { (field(activity,"selectionView") as? SubjectSelectionView)?.subjects?.isNotEmpty()==true }
+                ui {
+                    val again=field(activity,"selectionView") as SubjectSelectionView
+                    assertNull(again.selectedIndex)
+                    assertFalse(button(activity,"Snip it out").isEnabled)
+                }
             }
         } finally {
             ui { activity.finish() }; instrumentation.waitForIdleSync()

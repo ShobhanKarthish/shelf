@@ -46,6 +46,13 @@ class MainActivity : Activity(), ThingHost {
     private var page = "desk"
     private var original: Bitmap? = null
     private var cutout: Bitmap? = null
+    /** Stickers snipped from one photo, named one at a time: [batchAt] of [batch]. */
+    private var batch = 1
+    private var batchAt = 0
+    /** Things saved so far from this photo, so they can all stick in together at the end. */
+    private val batchSaved = ArrayList<String>()
+    /** How many objects were found in the photo being added. */
+    private var found = 0
     private var framed = false
     private var generation = 0
     private var draftTitle = ""
@@ -113,7 +120,11 @@ class MainActivity : Activity(), ThingHost {
         thingFrom = state?.getString("thingFrom") ?: "page"
         addFrom = state?.getString("addFrom") ?: "desk"
         original = BitmapFactory.decodeFile(File(cacheDir,"draft.png").path)
-        cutout = if(state?.getBoolean("cutoutReady")==true) BitmapFactory.decodeFile(File(cacheDir,"cutout.png").path) else null
+        batch = state?.getInt("batch",1) ?: 1
+        batchAt = state?.getInt("batchAt",0) ?: 0
+        found = state?.getInt("found",0) ?: 0
+        state?.getStringArrayList("batchSaved")?.let { batchSaved+=it }
+        cutout = if(state?.getBoolean("cutoutReady")==true) BitmapFactory.decodeFile(cutoutFile(batchAt).path) else null
         page = state?.getString("page") ?: if (prefs.getBoolean("onboarded",false)) "desk" else "onboarding"
         when {
             page == "onboarding" -> onboarding()
@@ -136,6 +147,7 @@ class MainActivity : Activity(), ThingHost {
     override fun onSaveInstanceState(out: Bundle) {
         rememberFields()
         out.putBoolean("cutoutReady",cutout!=null)
+        out.putInt("batch",batch); out.putInt("batchAt",batchAt); out.putInt("found",found); out.putStringArrayList("batchSaved",ArrayList(batchSaved))
         out.putString("page",page); out.putString("title",draftTitle); out.putString("story",draftStory); out.putString("book",draftBook); out.putString("editing",editing)
         out.putBoolean("framed",framed); out.putBoolean("calendar",calendarMode); out.putInt("bookIndex",bookIndex); out.putString("openBook",openBook); out.putInt("pageIndex",pageIndex)
         out.putInt("month",month); out.putString("thing",thingId); out.putString("thingFrom",thingFrom); out.putString("addFrom",addFrom)
@@ -221,11 +233,14 @@ class MainActivity : Activity(), ThingHost {
     }
     private fun primary(label: String, action: () -> Unit) = PrimaryButton(this,label).apply { setOnClickListener { action() } }
     private fun quiet(label: String, color: Int=if(onDark) Color.WHITE else Ink.INK, action: () -> Unit) = QuietButton(this,label,color=color).apply { setOnClickListener { action() } }
+    /** Which step of adding you're on, and the book the thing is going into, so that's never a surprise. */
+    private fun step(n: Int)="Into ${bookFor(draftBook).name} · step $n of 2"+(if(n==2 && batch>1) " · ${batchAt+1} of $batch" else "")
     /** Close on the left; which step you're on, in the middle. */
     private fun topBar(step: String) {
         val bar=FrameLayout(this)
+        // Long book names are cut short rather than running under the close button.
         bar.addView(RoundButton(this,Doodle.X,if(editing!=null) "Stop editing" else "Cancel adding").apply { setOnClickListener { leave() } },FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START or Gravity.CENTER_VERTICAL))
-        bar.addView(label(step),FrameLayout.LayoutParams(-2,-2,Gravity.CENTER))
+        bar.addView(label(step).apply { maxLines=1; ellipsize=TextUtils.TruncateAt.END; gravity=Gravity.CENTER },FrameLayout.LayoutParams(-1,-2,Gravity.CENTER).apply { marginStart=dp(60); marginEnd=dp(20) })
         body.addView(bar,LinearLayout.LayoutParams(-1,dp(56)).apply { marginStart=-dp(6); marginEnd=-dp(6) })
     }
     private fun EditText.onEdit(block: () -> Unit) = addTextChangedListener(object : TextWatcher {
@@ -249,7 +264,7 @@ class MainActivity : Activity(), ThingHost {
     private fun topLabel(value: String) = label(value).apply {
         gravity=Gravity.CENTER; maxLines=1; ellipsize=TextUtils.TruncateAt.END
         if(onDark && page!="desk") setShadowLayer(dp(2f),0f,dp(1f),Color.argb(110,0,0,0))
-        frame.addView(this,FrameLayout.LayoutParams(-1,dp(48),Gravity.TOP).apply { topMargin=insetTop+dp(10); marginStart=dp(72); marginEnd=dp(72) })
+        frame.addView(this,FrameLayout.LayoutParams(-1,dp(48),Gravity.TOP).apply { topMargin=insetTop+dp(10); marginStart=dp(72); marginEnd=dp(if(page=="thing") 124 else 72) })
     }
     /** Runs [action] once a button's little flourish has had a moment to show. */
     private fun after(ms: Long, action: () -> Unit) { if(moving) frame.postDelayed({ if(!isDestroyed) action() },ms) else action() }
@@ -381,7 +396,9 @@ class MainActivity : Activity(), ThingHost {
         if(saving) return
         if(page in listOf("form","review","processing","revealing")) {
             if(editing!=null) { editing=null; draftTitle=""; draftStory=""; return back() }
-            ask("Leave without keeping it?","This photo won’t be added.","Leave","Keep going") { generation++; clearDraft(); back(); true }
+            val left=batch-batchAt
+            if(batchSaved.isNotEmpty()) ask("Stop here?","The ${count(left)} you haven’t named yet won’t be added. The ones you’ve named are already in your book.","Stop","Keep going") { generation++; clearDraft(); back(); true }
+            else ask("Leave without keeping it?",if(batch>1) "These ${batch} things won’t be added." else "This photo won’t be added.","Leave","Keep going") { generation++; clearDraft(); back(); true }
         } else desk()
     }
     /** Back to wherever adding or editing started. */
@@ -403,7 +420,12 @@ class MainActivity : Activity(), ThingHost {
             else -> leave()
         }
     }
-    private fun clearDraft() { original=null; cutout=null; draftTitle=""; draftStory=""; File(cacheDir,"draft.png").delete(); File(cacheDir,"cutout.png").delete() }
+    private fun clearDraft() {
+        original=null; cutout=null; draftTitle=""; draftStory=""; File(cacheDir,"draft.png").delete(); clearCutouts()
+    }
+    /** Where the [k]th sticker snipped from the photo waits to be named. */
+    private fun cutoutFile(k: Int)=File(cacheDir,if(k==0) "cutout.png" else "cutout-$k.png")
+    private fun clearCutouts() { for(k in 0 until max(batch,1)) cutoutFile(k).delete(); batch=1; batchAt=0; batchSaved.clear() }
     private fun finishOnboarding() { prefs.edit().putBoolean("onboarded",true).apply(); desk() }
 
     // ---------- welcome ----------
@@ -480,6 +502,7 @@ class MainActivity : Activity(), ThingHost {
             bookIndex=i
             val book=books[i]; val items=all.filter { it.book==book.id }
             burst.show(items.size,spin=shown>=0 && shown!=i); shown=i
+            burst.visibility=if(items.isEmpty()) View.INVISIBLE else View.VISIBLE
             for(k in 0 until dots.childCount) dots.getChildAt(k).apply {
                 background=pill(if(k==i) Ink.SUN else Color.WHITE,dp(6f),Ink.INK,dp(2f))
                 layoutParams=(layoutParams as LinearLayout.LayoutParams).apply { width=dp(if(k==i) 28 else 12) }
@@ -537,7 +560,8 @@ class MainActivity : Activity(), ThingHost {
         calHolder=FrameLayout(this).apply { clipChildren=false }
         frame.addView(calHolder,FrameLayout.LayoutParams(-1,-1).apply { topMargin=insetTop+dp(166); bottomMargin=insetBottom+dp(112) })
         arrows("month",{ shiftMonth(-1) },{ shiftMonth(1) })
-        addButton("Add a thing") { startAdd(books[bookIndex.coerceIn(0,books.size-1)].id,"desk") }
+        // From the calendar, a new thing goes where the last one went; the add screens say which book that is.
+        addButton("Add a thing") { startAdd(all.maxByOrNull { it.created }?.book?.takeIf { id -> books.any { it.id==id } } ?: books[bookIndex.coerceIn(0,books.size-1)].id,"desk") }
         showMonth(0)
     }
     /** Shows the current month. Going to another month ([dir] ±1) tears the old one off and drops the new one in. */
@@ -620,7 +644,7 @@ class MainActivity : Activity(), ThingHost {
     private fun calYear(): Int { val now=Calendar.getInstance(); return (if(month<0) now.get(Calendar.YEAR)*12+now.get(Calendar.MONTH) else month)/12 }
 
     // ---------- a book's pages ----------
-    private fun openPage(bookId: String, index: Int, fresh: String?=null, peek: Boolean=false) {
+    private fun openPage(bookId: String, index: Int, fresh: List<String> = emptyList(), peek: Boolean=false) {
         val books=store.books(); val book=books.find { it.id==bookId } ?: return desk()
         val items=store.inBook(bookId); val pages=PageLayout.pages(items.size)
         openBook=bookId; pageIndex=index.coerceIn(0,pages-1); bookIndex=books.indexOf(book)
@@ -651,7 +675,7 @@ class MainActivity : Activity(), ThingHost {
             addButton("Add a thing to ${book.name}") { startAdd(book.id,"page") }
         }
         view.onReady={
-            if(fresh!=null) view.current?.things?.find { it.item.id==fresh }?.stickIn()
+            view.current?.things?.filter { it.item.id in fresh }?.forEachIndexed { i,t -> t.stickIn(120L+i*160L) }
             if(peek && !arranging && book.id !in peeked) { peeked+=book.id; view.postDelayed({ view.peek() },450) }
         }
     }
@@ -723,6 +747,7 @@ class MainActivity : Activity(), ThingHost {
         corner(RoundButton(this,Doodle.PREV,if(from=="calendar") "Back to the calendar" else "Back to ${book.name}").apply { setOnClickListener { thingBack() } },start=14)
         topLabel("${book.name} · page ${PageLayout.pageOf(index)+1}")
         corner(RoundButton(this,Doodle.PENCIL,"Edit this thing").apply { setOnClickListener { after(300) { edit(item) } } },end=14)
+        corner(RoundButton(this,Doodle.TRASH,"Delete this thing").apply { setOnClickListener { confirmDelete(item) } },end=68)
     }
     /** A small outlined pill under a thing's story. */
     private fun metaChip(value: String, color: Int, action: () -> Unit) = text(value,13.5f,Typeface.DEFAULT_BOLD,Ink.INK,1f).apply {
@@ -750,7 +775,7 @@ class MainActivity : Activity(), ThingHost {
         if(request!=42 || result!=RESULT_OK) return
         val uri=data?.data ?: return
         generation++; val token=generation
-        flow("processing"); topBar("Step 1 of 2"); add(title("What would you like to keep?",32f),top=8); add(prose("Opening your photo…"),top=8)
+        flow("processing"); topBar(step(1)); add(title("What would you like to keep?",32f),top=8); add(prose("Opening your photo…"),top=8)
         worker.execute {
             try {
                 val b=ImageDecoder.decodeBitmap(ImageDecoder.createSource(contentResolver,uri)) { decoder,info,_ ->
@@ -758,15 +783,14 @@ class MainActivity : Activity(), ThingHost {
                     decoder.setTargetSize(maxOf(1,(info.size.width*scale).toInt()),maxOf(1,(info.size.height*scale).toInt())); decoder.allocator=ImageDecoder.ALLOCATOR_SOFTWARE
                 }
                 File(cacheDir,"draft.png").outputStream().use { check(b.compress(Bitmap.CompressFormat.PNG,100,it)) }
-                File(cacheDir,"cutout.png").delete()
-                runOnUiThread { if(token==generation && !isDestroyed) { original=b; cutout=null; framed=false; process() } }
+                runOnUiThread { if(token==generation && !isDestroyed) { clearCutouts(); original=b; cutout=null; framed=false; process() } }
             } catch(e:Exception) { runOnUiThread { if(token==generation && !isDestroyed) { back(); error("This photo couldn’t be opened. Try another image.") } } }
         }
     }
     private fun process() {
         val b=original ?: return
-        cutout=null; framed=false
-        flow("processing"); topBar("Step 1 of 2")
+        cutout=null; framed=false; clearCutouts()
+        flow("processing"); topBar(step(1))
         val heading=title("What would you like to keep?",32f)
         val hint=prose("Finding the things in your photo…")
         add(heading,top=8); add(hint,top=8)
@@ -776,10 +800,11 @@ class MainActivity : Activity(), ThingHost {
         val height=((available-dp(32))*b.height/b.width.toFloat()+dp(32)).toInt().coerceIn(dp(220),dp(440))
         body.addView(stage,LinearLayout.LayoutParams(-1,height).apply { topMargin=dp(12) })
         val chips=LinearLayout(this).apply { gravity=Gravity.CENTER; clipChildren=false }
-        val chipRow=HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; isFillViewport=true; visibility=View.GONE; addView(chips) }
+        val chipRow=HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; isFillViewport=true; visibility=View.GONE; isHorizontalFadingEdgeEnabled=true; setFadingEdgeLength(dp(40)); addView(chips) }
         add(chipRow,top=8)
         val status=text("",14f,fonts.sans,if(onDark) Color.WHITE else Ink.INK_2).apply { gravity=Gravity.CENTER_HORIZONTAL; accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE }
         add(status,top=6)
+        smallPhotoNote(b)?.let { add(it,top=6) }
         spring()
         val keep=primary("Snip it out") {}.apply { isEnabled=false }
         var acts=actions(keep,quiet("Keep the whole photo instead") { generation++; framed=true; review() })
@@ -787,46 +812,56 @@ class MainActivity : Activity(), ThingHost {
         val token=++generation
         val timeout=Runnable {
             if(token==generation && page=="processing") {
-                generation++; framed=true; review("Finding things is taking too long. Keep the photo, or try again.")
+                generation++; framed=true; review("Finding things is taking too long. Keep the photo, or try again.",retry=true)
             }
         }
         val host=frame
         host.postDelayed(timeout,45000)
-        stage.onSelection={ index ->
-            keep.isEnabled=index!=null
-            status.text=when { index==null -> "Nothing chosen yet."; stage.subjects.size==1 -> ""; else -> "Object ${index+1} chosen." }
-            for(i in 0 until chips.childCount) chips.getChildAt(i).isSelected=i==index
-            if(index!=null) hint.text="Good choice. Snip it out."
+        stage.onSelection={ picked,byHand ->
+            keep.isEnabled=picked.isNotEmpty()
+            keep.text=if(picked.size>1) "Snip out all ${picked.size}" else "Snip it out"
+            status.text=when {
+                found<=1 -> ""
+                picked.isEmpty() -> "Nothing chosen yet. Tap the things you want."
+                picked.size==1 -> "1 chosen. Tap others to keep them too."
+                else -> "${picked.size} chosen. You’ll name each one next."
+            }
+            for(i in 0 until chips.childCount) chips.getChildAt(i).isSelected=i in picked
+            // Only call it a good choice when it was the person's.
+            if(byHand && picked.isNotEmpty()) hint.text=if(picked.size>1) "Good choices. Snip them out." else "Good choice. Snip it out."
         }
         stage.onMiss={ status.text="Nothing to cut there. Tap inside a dashed line." }
         keep.setOnClickListener {
-            val index=stage.selectedIndex ?: return@setOnClickListener
-            if(page!="processing") return@setOnClickListener
+            val picked=stage.picked
+            if(picked.isEmpty() || page!="processing") return@setOnClickListener
             stage.lockSelection()
             page="revealing"; keep.isEnabled=false
             chipRow.visibility=View.INVISIBLE; acts.visibility=View.INVISIBLE
             heading.minHeight=heading.height; hint.minHeight=hint.height
             heading.text="Snipping…"
-            hint.text="Cutting along the line."
+            hint.text=if(picked.size>1) "Cutting along each line." else "Cutting along the line."
             status.text=""
-            val subject=stage.subjects[index]
+            val subjects=picked.map { stage.subjects[it] }
             worker.execute {
                 try {
-                    val chosen=subject.export()
-                    val file=android.util.AtomicFile(File(cacheDir,"cutout.png"))
-                    val stream=file.startWrite()
-                    try { check(chosen.compress(Bitmap.CompressFormat.PNG,100,stream)); file.finishWrite(stream) }
-                    catch(e: Exception) { file.failWrite(stream); throw e }
+                    val chosen=subjects.map { it.export() }
+                    chosen.forEachIndexed { k,bitmap ->
+                        val file=android.util.AtomicFile(cutoutFile(k))
+                        val stream=file.startWrite()
+                        try { check(bitmap.compress(Bitmap.CompressFormat.PNG,100,stream)); file.finishWrite(stream) }
+                        catch(e: Exception) { file.failWrite(stream); throw e }
+                    }
                     runOnUiThread {
                         if(token!=generation || isDestroyed) return@runOnUiThread
-                        cutout=chosen
+                        cutout=chosen[0]; batch=chosen.size; batchAt=0; batchSaved.clear()
                         stage.snip {
                             if(token==generation && !isDestroyed) {
-                                page="review"; heading.text="Snipped."; hint.text="Just the thing, ready for your book."
+                                page="review"; heading.text=if(batch>1) "Snipped $batch." else "Snipped."
+                                hint.text=if(batch>1) "You’ll name each one next." else "Just the thing, ready for your book."
                                 chipRow.visibility=View.GONE
-                                val next=actions(primary("Use this sticker") { form() },quiet("Choose a different object") { process() },quiet("Keep the whole photo instead") { framed=true; review() })
+                                val next=reviewActions()
                                 body.removeView(acts); body.addView(next); acts=next
-                                stage.announceForAccessibility("Snipped. Just the thing, ready for your book.")
+                                stage.announceForAccessibility(heading.text.toString()+" "+hint.text)
                             }
                         }
                     }
@@ -844,6 +879,7 @@ class MainActivity : Activity(), ThingHost {
                     PhotoSubject(it,subject.startX,subject.startY)
                 }
             }
+            found=subjects.size
             if(subjects.isEmpty()) { framed=true; review("There’s no separate thing to cut out here, so it stays a whole photo."); return@addOnSuccessListener }
             // Tracing cut lines and cutting stickers is real work: do it off the main thread.
             worker.execute {
@@ -853,10 +889,11 @@ class MainActivity : Activity(), ThingHost {
                 runOnUiThread {
                     if(isDestroyed || token!=generation) return@runOnUiThread
                     stage.show(subjects,outlines,cut)
-                    hint.text=if(subjects.size==1) "Found it. Snip it out when you’re ready." else "Tap the thing you want to cut out."
+                    hint.text=if(subjects.size==1) "Found it. Snip it out when you’re ready." else "Tap the things you want to cut out. You can pick more than one."
                     if(subjects.size>1) {
-                        thumbs.forEachIndexed { i,thumb -> chips.addView(ChipButton(this,i+1,thumb).apply { setOnClickListener { stage.select(i) } },LinearLayout.LayoutParams(dp(72),dp(72))) }
+                        thumbs.forEachIndexed { i,thumb -> chips.addView(ChipButton(this,i+1,thumb).apply { setOnClickListener { stage.toggle(i) } },LinearLayout.LayoutParams(dp(72),dp(72))) }
                         chipRow.visibility=View.VISIBLE
+                        status.text=if(subjects.size>4) "${subjects.size} things found. Swipe the row for more." else "${subjects.size} things found."
                     }
                     if(subjects.size==1) stage.select(0) // Nothing to choose between: go straight to snipping.
                 }
@@ -864,20 +901,34 @@ class MainActivity : Activity(), ThingHost {
         }.addOnFailureListener {
             if(token==generation && !isDestroyed) {
                 host.removeCallbacks(timeout); framed=true
-                review("Things couldn’t be found yet. Keep the photo, or try again once Shelf is ready.")
+                review("Things couldn’t be found yet. Keep the photo, or try again once Shelf is ready.",retry=true)
             }
         }
     }
-    private fun review(message: String="") {
-        flow("review"); topBar("Step 1 of 2")
-        add(title(if(framed) "The whole photo, then." else "Snipped.",32f),top=8)
-        add(prose(if(framed) message.ifEmpty { "It will go in your book as a print." } else "Just the thing, ready for your book."),top=8)
-        val art=StickerView(this,-3f,bottom=false,taped=framed).apply { contentDescription=if(framed) "Your photo" else "Your object"; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES }
+    /** A gentle warning when a photo is too small to make a sharp sticker. */
+    private fun smallPhotoNote(b: Bitmap)=if(max(b.width,b.height)<600) text("This photo is small, so its sticker may look a little rough.",13.5f,fonts.sans,Ink.ACCENT_DARK).apply { gravity=Gravity.CENTER_HORIZONTAL } else null
+    /** What to do with a fresh sticker: name it, or go back and pick again when there was more than one thing to pick. */
+    private fun reviewActions(): LinearLayout {
+        val use=primary(if(batch>1) "Name them" else "Use this sticker") { form() }
+        val others=listOfNotNull(
+            if(found>1) quiet(if(batch>1) "Choose different things" else "Choose a different object") { process() } else null,
+            quiet("Keep the whole photo instead") { clearCutouts(); framed=true; review() })
+        return actions(use,*others.toTypedArray())
+    }
+    /** The cut-out (or the whole photo) before naming it. [retry] offers another go at finding things, when that might help. */
+    private fun review(message: String="", retry: Boolean=false) {
+        flow("review"); topBar(step(1))
+        add(title(if(framed) "The whole photo, then." else if(batch>1) "Snipped $batch." else "Snipped.",32f),top=8)
+        add(prose(if(framed) message.ifEmpty { "It will go in your book as a print." } else if(batch>1) "You’ll name each one next." else "Just the thing, ready for your book."),top=8)
+        val art=StickerView(this,-3f,bottom=false,taped=framed).apply { contentDescription=if(framed) "Your photo" else "Your sticker"; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES }
         body.addView(art,LinearLayout.LayoutParams(-1,dp(300)).apply { topMargin=dp(24) })
         artOf(if(framed) original else cutout,framed,dp(360),art)
+        original?.let { smallPhotoNote(it)?.let { note -> add(note,top=8) } }
         spring()
-        body.addView(if(framed) actions(primary("Use this photo") { form() },quiet(if(message.isNotEmpty()) "Try the cutout again" else "Cut out an object instead") { framed=false; process() },quiet("Choose another photo") { pick() })
-            else actions(primary("Use this sticker") { form() },quiet("Choose a different object") { process() },quiet("Keep the whole photo instead") { framed=true; review() }))
+        body.addView(if(framed) actions(primary("Use this photo") { form() },*listOfNotNull(
+                if(retry) quiet("Try the cutout again") { framed=false; process() } else if(message.isEmpty()) quiet("Cut out an object instead") { framed=false; process() } else null,
+                quiet("Choose another photo") { pick() }).toTypedArray())
+            else reviewActions())
     }
 
     // ---------- naming it ----------
@@ -891,8 +942,8 @@ class MainActivity : Activity(), ThingHost {
         val book=bookFor(draftBook); draftBook=book.id
         val item=editing?.let { store.find(it) }
         if(editing!=null && item==null) { editing=null; return desk() }
-        flow("form"); topBar(if(item!=null) "Editing" else "Step 2 of 2")
-        add(title(if(item!=null) "Edit this thing" else "Name it",32f),top=8)
+        flow("form"); topBar(if(item!=null) "Editing" else step(2))
+        add(title(if(item!=null) "Edit this thing" else if(batch>1) "Name it (${batchAt+1} of $batch)" else "Name it",32f),top=8)
         val art=StickerView(this,-4f,bottom=true,taped=framed).apply { contentDescription=if(framed) "Your photo" else "Your object"; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES }
         body.addView(art,LinearLayout.LayoutParams(-1,dp(170)).apply { topMargin=dp(10) })
         if(item!=null) loader(item,dp(340)) { art.show(it,true) } else artOf(if(framed) original else cutout,framed,dp(340),art)
@@ -926,7 +977,8 @@ class MainActivity : Activity(), ThingHost {
         })
         body.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false; addView(chips) },LinearLayout.LayoutParams(-1,-2))
         spring()
-        val save=primary(if(item!=null) "Save changes" else "Stick it in") {}
+        val more=item==null && batchAt<batch-1
+        val save=primary(if(item!=null) "Save changes" else if(more) "Stick it in, then the next" else "Stick it in") {}
         body.addView(if(item!=null) actions(save,quiet("Delete this thing",Ink.ACCENT_DARK) { confirmDelete(item) }) else actions(save))
         titleField=name; storyField=story
         save.setOnClickListener {
@@ -946,7 +998,15 @@ class MainActivity : Activity(), ThingHost {
                         val saved=store.save(bitmap,draftTitle,draftStory,bookId,framed,photo)
                         Stickers.prepare(this,store,saved)
                         val index=store.inBook(bookId).indexOfFirst { it.id==saved.id }
-                        runOnUiThread { saving=false; if(!isDestroyed) { clearDraft(); arranging=false; openPage(bookId,PageLayout.pageOf(index),fresh=saved.id) } }
+                        // With more stickers from the same photo to go, name the next one; the book stays chosen.
+                        val next=if(more) BitmapFactory.decodeFile(cutoutFile(batchAt+1).path) else null
+                        runOnUiThread {
+                            saving=false
+                            if(isDestroyed) return@runOnUiThread
+                            batchSaved+=saved.id
+                            if(next!=null) { batchAt++; cutout=next; draftTitle=""; draftStory=""; form(); snack("Kept. Now the next one.") }
+                            else { val fresh=batchSaved.toList(); clearDraft(); arranging=false; openPage(bookId,PageLayout.pageOf(index),fresh=fresh) }
+                        }
                     } catch(e:Exception) { runOnUiThread { saving=false; if(!isDestroyed) { save.isEnabled=true; error("Couldn’t save it. Free some space and try again; your draft is still here.") } } }
                 }
             }

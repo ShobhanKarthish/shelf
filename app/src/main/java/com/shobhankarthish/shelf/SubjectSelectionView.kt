@@ -29,17 +29,22 @@ data class PhotoSubject(val bitmap: Bitmap, val left: Int, val top: Int) {
 
 /**
  * The chosen photo, with a dashed cut line around each object the model found. Tapping (or holding)
- * inside one selects it, and [snip] cuts it out along that line as a sticker.
+ * inside one picks it, and tapping again lets it go; several can be picked at once. [snip] cuts each
+ * one out along its line as a sticker.
  */
 class SubjectSelectionView(context: Context, private val original: Bitmap) : View(context) {
     /** Setting subjects directly traces their outlines here; [show] takes outlines already traced on a worker. */
     var subjects: List<PhotoSubject>
         get() = found
         set(value) { show(value, trace(value, original), emptyList()) }
-    var onSelection: (Int?) -> Unit = {}
+    /** Called when the picks change; [byHand] is false when Shelf picked for you. */
+    var onSelection: (picked: List<Int>, byHand: Boolean) -> Unit = { _, _ -> }
     var onMiss: () -> Unit = {}
-    var selectedIndex: Int? = null
+    /** The picked objects, in the order they were picked. */
+    var picked: List<Int> = emptyList()
         private set
+    /** The first pick, if any. */
+    val selectedIndex: Int? get() = picked.firstOrNull()
     private val d = resources.displayMetrics.density
     private var found: List<PhotoSubject> = emptyList()
     private var outlines: List<FloatArray> = emptyList()
@@ -49,12 +54,9 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
     private var paused = false
     private var snipper: ValueAnimator? = null
     private var elapsed = -1f
-    private var cutLength = 0f
-    private var cutMeasure: PathMeasure? = null
     private var ring: PointF? = null
     private var ringAt = 0L
     private val image = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val shade = Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = PorterDuffColorFilter(Ink.INK, PorterDuff.Mode.SRC_IN) }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val under = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 4f * d; strokeJoin = Paint.Join.ROUND; color = Color.WHITE }
     private val dashes = DashPathEffect(floatArrayOf(6 * d, 5 * d), 0f)
@@ -102,10 +104,18 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
         }
         return c
     }
-    fun select(index: Int?) {
+    /** Picks just [index], or nothing; [byHand] says whether the person did it. */
+    fun select(index: Int?, byHand: Boolean = false) {
         if (locked) return
-        selectedIndex = index?.takeIf { it in found.indices }
-        invalidate(); onSelection(selectedIndex)
+        picked = listOfNotNull(index?.takeIf { it in found.indices })
+        invalidate(); onSelection(picked, byHand)
+    }
+    /** Picks [index] if it wasn't, or lets it go if it was. */
+    fun toggle(index: Int) {
+        if (locked || index !in found.indices) return
+        // With only one thing in the photo, tapping it again keeps it: there's nothing else it could mean.
+        picked = if (index in picked && found.size > 1) picked - index else if (index in picked) picked else picked + index
+        invalidate(); onSelection(picked, true)
     }
     /** The object cut along its dashed line; [Sticker.left] and [Sticker.top] are in the object's own pixels. */
     fun sticker(index: Int): Sticker = stickers.getOrPut(index) { cutOut(found[index], outlines[index]) }
@@ -119,7 +129,7 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
         if (locked) return false
         ring = PointF(e.x, e.y); ringAt = SystemClock.uptimeMillis()
         val index = subjectAt(e.x, e.y)
-        if (index == null) { invalidate(); onMiss() } else select(index)
+        if (index == null) { invalidate(); onMiss() } else toggle(index)
         return index != null
     }
     @android.annotation.SuppressLint("ClickableViewAccessibility") // GestureDetector calls performClick for taps; buttons offer accessible selection.
@@ -130,14 +140,18 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
     override fun performClick(): Boolean { super.performClick(); return true }
     fun lockSelection() { locked = true }
 
-    /** Scissors follow the selected line, the photo fades, and the sticker settles in the middle. */
+    /** How long the scissors spend on each line: the whole cut for one, shorter turns for several. */
+    private val each get() = if (picked.size <= 1) CUT else max(520f, 2600f / picked.size)
+    private val cutEnd get() = each * max(1, picked.size)
+    private val end get() = cutEnd + FADE + LIFT + 50f
+    /** Scissors follow each picked line in turn, the photo fades, and the stickers settle in the middle. */
     fun snip(done: () -> Unit) {
-        val index = selectedIndex ?: return
-        locked = true; sticker(index)
-        paths().getOrNull(index)?.let { cutMeasure = PathMeasure(it, true); cutLength = cutMeasure!!.length }
-        if (!ValueAnimator.areAnimatorsEnabled()) { elapsed = END; invalidate(); done(); return }
-        snipper = ValueAnimator.ofFloat(0f, END).apply {
-            duration = END.toLong(); interpolator = LinearInterpolator()
+        if (picked.isEmpty()) return
+        locked = true; picked.forEach { sticker(it) }
+        contentDescription = if (picked.size == 1) "Your sticker" else "Your ${picked.size} stickers"
+        if (!ValueAnimator.areAnimatorsEnabled()) { elapsed = end; invalidate(); done(); return }
+        snipper = ValueAnimator.ofFloat(0f, end).apply {
+            duration = end.toLong(); interpolator = LinearInterpolator()
             addUpdateListener { elapsed = it.animatedValue as Float; invalidate() }
             addListener(object : AnimatorListenerAdapter() {
                 private var cancelled = false
@@ -158,16 +172,16 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val r = photoRect(); val e = elapsed
-        val fade = if (e < CUT) 0f else ((e - CUT) / FADE).coerceIn(0f, 1f)
+        val r = photoRect(); val e = elapsed; val cutEnd = cutEnd
+        val fade = if (e < cutEnd) 0f else ((e - cutEnd) / FADE).coerceIn(0f, 1f)
         if (fade < 1f) {
             val saved = if (fade > 0f) canvas.saveLayerAlpha(null as RectF?, ((1 - fade) * 255).roundToInt()) else canvas.save()
             drawPhoto(canvas, r)
-            if (e < 0f) drawLines(canvas, r) else if (e < CUT) drawCut(canvas, e)
+            if (e < 0f) drawLines(canvas, r) else if (e < cutEnd) drawCut(canvas, e)
             canvas.restoreToCount(saved)
         }
-        if (e >= CUT) drawSticker(canvas, r, e)
-        if (e in 0f..CUT) drawCutter(canvas, e)
+        if (e >= cutEnd) picked.forEachIndexed { k, i -> drawSticker(canvas, r, e - cutEnd, i, k) }
+        if (e >= 0f && e < cutEnd) drawCutter(canvas, e)
         drawRing(canvas)
     }
     /** The photo as a print: a white border, a soft shadow and a strip of tape at two corners. */
@@ -182,42 +196,51 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
         c.restore()
     }
     private fun drawLines(c: Canvas, r: RectF) {
-        val all = paths(); val sel = selectedIndex
-        if (sel != null && sel < all.size) { c.save(); c.clipPath(card); c.clipOutPath(all[sel]); fill.color = Ink.alpha(Ink.INK, .45f); c.drawRect(r, fill); c.restore() }
+        val all = paths(); val sel = picked.filter { it < all.size }
+        // Everything but the picks dims, so it's clear what will be cut out.
+        if (sel.isNotEmpty()) { c.save(); c.clipPath(card); sel.forEach { c.clipOutPath(all[it]) }; fill.color = Ink.alpha(Ink.INK, .5f); c.drawRect(r, fill); c.restore() }
         all.forEachIndexed { i, p ->
-            val faded = sel != null && i != sel
-            under.alpha = if (faded) 60 else 230; c.drawPath(p, under)
-            // The chosen line is drawn solid; the others stay dashed.
-            dash.color = Pen.BLUE; dash.strokeWidth = (if (i == sel) 3f else 2f) * d; dash.alpha = if (faded) 70 else 255
-            dash.pathEffect = if (i == sel) null else dashes
+            val chosen = i in sel; val faded = sel.isNotEmpty() && !chosen
+            under.alpha = if (faded) 50 else 230; under.strokeWidth = (if (chosen) 6f else 4f) * d; c.drawPath(p, under)
+            // Picked lines are solid and bold; the others stay dashed.
+            dash.color = Pen.BLUE; dash.strokeWidth = (if (chosen) 3.5f else 2f) * d; dash.alpha = if (faded) 60 else 255
+            dash.pathEffect = if (chosen) null else dashes
             c.drawPath(p, dash)
         }
-        dash.pathEffect = dashes
+        dash.pathEffect = dashes; under.strokeWidth = 4f * d
     }
-    private fun cutProgress(e: Float) = smooth.getInterpolation(min(1f, e / CUT))
+    /** How far along line [k] (in pick order) the scissors are, from 0 to 1. */
+    private fun cutProgress(e: Float, k: Int) = smooth.getInterpolation(((e - k * each) / each).coerceIn(0f, 1f))
     private fun drawCut(c: Canvas, e: Float) {
-        val p = paths().getOrNull(selectedIndex ?: return) ?: return
-        under.alpha = 190; c.drawPath(p, under)
-        dash.color = Pen.BLUE; dash.strokeWidth = 2.6f * d; dash.alpha = 255; c.drawPath(p, dash)
-        cut.reset(); cutMeasure?.getSegment(0f, cutProgress(e) * cutLength, cut, true); c.drawPath(cut, trail)
+        val all = paths()
+        picked.forEachIndexed { k, i ->
+            val p = all.getOrNull(i) ?: return@forEachIndexed
+            under.alpha = 190; c.drawPath(p, under)
+            dash.color = Pen.BLUE; dash.strokeWidth = 2.6f * d; dash.alpha = 255; c.drawPath(p, dash)
+            val m = PathMeasure(p, true); cut.reset(); m.getSegment(0f, cutProgress(e, k) * m.length, cut, true); c.drawPath(cut, trail)
+        }
     }
     private fun drawCutter(c: Canvas, e: Float) {
-        val m = cutMeasure ?: return; val pos = FloatArray(2); val tan = FloatArray(2)
-        m.getPosTan(cutProgress(e) * cutLength, pos, tan)
+        val k = min(picked.size - 1, (e / each).toInt()); val p = paths().getOrNull(picked.getOrNull(k) ?: return) ?: return
+        val m = PathMeasure(p, true); val pos = FloatArray(2); val tan = FloatArray(2)
+        m.getPosTan(cutProgress(e, k) * m.length, pos, tan)
         c.save(); c.translate(pos[0], pos[1]); c.rotate(Math.toDegrees(atan2(tan[1], tan[0]).toDouble()).toFloat())
         drawScissors(c, 4f + 8f * abs(sin(e / 70f)), 48 * d)
         c.restore()
     }
-    private fun drawSticker(c: Canvas, r: RectF, e: Float) {
-        val index = selectedIndex ?: return; val st = sticker(index); val sub = found[index]; val s = r.width() / original.width
+    /** Pick [k] of the picks lifts out of the photo and settles into its place in a tidy row (or grid) in the middle. */
+    private fun drawSticker(c: Canvas, r: RectF, e: Float, index: Int, k: Int) {
+        val st = sticker(index); val sub = found[index]; val s = r.width() / original.width
         val dst = RectF(r.left + (sub.left + st.left) * s, r.top + (sub.top + st.top) * s, 0f, 0f).apply { right = left + st.bitmap.width * s; bottom = top + st.bitmap.height * s }
-        val t = lift.getInterpolation(((e - CUT) / LIFT).coerceIn(0f, 1f))
-        val target = min(1.8f, min(r.width() * .72f / dst.width(), r.height() * .9f / dst.height()))
-        val k = 1 + (target - 1) * t
-        c.save(); c.translate((r.centerX() - dst.centerX()) * t, (r.centerY() - dst.centerY()) * t)
-        c.rotate(-3 * t, dst.centerX(), dst.centerY()); c.scale(k, k, dst.centerX(), dst.centerY())
-        shade.alpha = 20; c.save(); c.translate(0f, 4 * d / k); c.drawBitmap(st.bitmap, null, dst, shade); c.restore()
-        c.drawBitmap(st.bitmap, null, dst, image)
+        val n = picked.size; val cols = min(n, 3); val rows = (n + cols - 1) / cols
+        val cw = r.width() / cols; val ch = r.height() / rows
+        val cx = r.left + cw * (k % cols + .5f); val cy = r.top + ch * (k / cols + .5f)
+        val t = lift.getInterpolation(((e - k * 60f) / LIFT).coerceIn(0f, 1f))
+        val target = min(1.8f, min(cw * .78f / dst.width(), ch * .85f / dst.height()))
+        val scale = 1 + (target - 1) * t
+        c.save(); c.translate((cx - dst.centerX()) * t, (cy - dst.centerY()) * t)
+        c.rotate((if (k % 2 == 0) -3 else 4) * t, dst.centerX(), dst.centerY()); c.scale(scale, scale, dst.centerX(), dst.centerY())
+        drawCutout(c, st.bitmap, dst, 2 * d / scale * t, 4 * d / scale)
         c.restore()
     }
     private fun drawRing(c: Canvas) {
@@ -238,7 +261,6 @@ class SubjectSelectionView(context: Context, private val original: Bitmap) : Vie
         private const val CUT = 1300f
         private const val FADE = 300f
         private const val LIFT = 550f
-        const val END = 1900f
         /** Cut lines for each subject, in photo coordinates. Safe to call off the main thread. */
         fun trace(subjects: List<PhotoSubject>, photo: Bitmap): List<FloatArray> {
             val pad = max(photo.width, photo.height) * .02f
