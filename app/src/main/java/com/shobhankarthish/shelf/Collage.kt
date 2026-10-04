@@ -34,6 +34,7 @@ class Fonts private constructor(assets: AssetManager) {
         fun of(context: Context)=loaded ?: synchronized(this) { loaded ?: Fonts(context.applicationContext.assets).also { loaded=it } }
         /** The display face for drawings made without a context; the app loads the fonts before anything is drawn. */
         val displayFace: Typeface get()=loaded?.display ?: Typeface.DEFAULT_BOLD
+        val handFace: Typeface get()=loaded?.hand ?: Typeface.DEFAULT
     }
 }
 

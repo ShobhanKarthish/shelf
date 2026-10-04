@@ -154,18 +154,25 @@ fun drawStamp(c: Canvas, text: String, left: Float, top: Float, angle: Float, pu
 /** The string from a thing to its tag. */
 fun drawString(c: Canvas, path: Path) { strokePaint.color=Pen.STRING; strokePaint.strokeWidth=1.4f; strokePaint.shader=null; strokePaint.pathEffect=null; c.drawPath(path,strokePaint) }
 
+/** The longest a small tag gets; longer names are shortened to fit. */
+const val TAG_MAX=170f
+/** How wide a small tag for [name] is, in page units. */
+fun tagWidth(name: String, hand: Typeface): Float {
+    textPaint.reset(); textPaint.isAntiAlias=true; textPaint.letterSpacing=0f; textPaint.typeface=hand; textPaint.textSize=18f
+    return textPaint.measureText(TextUtils.ellipsize(name,textPaint,TAG_MAX-19f-11f,TextUtils.TruncateAt.END).toString())+19f+11f
+}
 /**
  * A kraft name tag, like the one in the app icon. [anchorX] is the end with the hole; with [holeRight] the tag
- * hangs to the left of it. Long names are shortened to fit.
+ * hangs to the left of it, and with [center] it hangs centred on it. Long names are shortened to fit.
  */
-fun drawTag(c: Canvas, name: String, anchorX: Float, top: Float, angle: Float, hand: Typeface, big: Boolean=false, holeRight: Boolean=false) {
+fun drawTag(c: Canvas, name: String, anchorX: Float, top: Float, angle: Float, hand: Typeface, big: Boolean=false, holeRight: Boolean=false, center: Boolean=false) {
     val h=if(big) 38f else 28f; val size=if(big) 25f else 18f; val notch=if(big) 14f else 11f
-    val holePad=if(big) 24f else 19f; val endPad=if(big) 16f else 11f; val maxWidth=if(big) 250f else 170f
+    val holePad=if(big) 24f else 19f; val endPad=if(big) 16f else 11f; val maxWidth=if(big) 250f else TAG_MAX
     textPaint.reset(); textPaint.isAntiAlias=true; textPaint.letterSpacing=0f; textPaint.typeface=hand; textPaint.textSize=size; textPaint.color=Ink.INK
     val text=TextUtils.ellipsize(name,textPaint,maxWidth-holePad-endPad,TextUtils.TruncateAt.END).toString()
     val w=textPaint.measureText(text)+holePad+endPad
     c.save(); c.translate(anchorX,top); c.rotate(angle)
-    if(holeRight) c.translate(-w,0f)
+    if(center) c.translate(-w/2,0f) else if(holeRight) c.translate(-w,0f)
     val shape=Path().apply {
         if(holeRight) { moveTo(0f,0f); lineTo(w-notch,0f); lineTo(w,h/2); lineTo(w-notch,h); lineTo(0f,h) }
         else { moveTo(notch,0f); lineTo(w,0f); lineTo(w,h); lineTo(notch,h); lineTo(0f,h/2) }
@@ -180,11 +187,13 @@ fun drawTag(c: Canvas, name: String, anchorX: Float, top: Float, angle: Float, h
     c.restore()
 }
 
-/** A few words in blue pen, wrapped to [width]. */
-class PenNote(text: String, hand: Typeface, val width: Float, private val alignRight: Boolean, size: Float=18f) {
+/** How wide a note under a thing is, in page units. */
+const val NOTE_WIDTH=170f
+/** A few words in blue pen, wrapped to [width] and centred, at most two lines. */
+class PenNote(text: String, hand: Typeface, val width: Float=NOTE_WIDTH, size: Float=18f) {
     private val paint=TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface=hand; textSize=size; color=Pen.BLUE }
     private val layout=StaticLayout.Builder.obtain(text,0,text.length,paint,width.roundToInt().coerceAtLeast(1))
-        .setAlignment(if(alignRight) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL).setLineSpacing(0f,1.02f).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END).build()
+        .setAlignment(Layout.Alignment.ALIGN_CENTER).setLineSpacing(0f,1.02f).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
     val height get()=layout.height.toFloat()
     fun draw(c: Canvas, left: Float, top: Float, angle: Float) {
         c.save(); c.translate(left,top); c.rotate(angle,width/2,height/2)
