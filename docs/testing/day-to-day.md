@@ -179,6 +179,49 @@ How an ordinary person uses Shelf over a few days: adding keepsakes from their p
 
 New tests check that the automatic layout never overlaps four long-named things, and that a moved thing joins the end of its new book.
 
+## Second run: 0.5.1
+
+**Run:** 4 October 2026, Shelf 0.5.1 release build, same emulator and photos, fresh install.
+
+**Results:** all 12 cases passed, 7 of them cleanly; 5 have smaller issues left. Every finding from the first run is fixed. There were no crashes.
+
+| Case | Result | Notes |
+| --- | --- | --- |
+| 1. First launch | Pass | "My first book", no "0 things" badge on the cover. |
+| 2. Add a keepsake | Pass with issue | "Found it" instead of "Good choice"; no "Choose a different object" with one thing. **The story under a thing in the left column runs off the left edge of the screen.** |
+| 3. Several from one photo, new book | Pass with issues | Picked 2 of 5 bracelets, named each in turn; the new book stayed chosen for the second. Says "Swipe the row for more" when all five fit; the button reads "Snip out all 2". |
+| 4. Whole photo | Pass | Only "Use this photo" and "Choose another photo"; the panorama's border is neat. |
+| 5. Ticket stub | Pass | Four things on one page, none overlapping. |
+| 6. Cancel halfway | Pass | |
+| 7. Look after a thing | Pass | Favourite star on the page, calendar and day sheet; the moved bear joined the end of its new book. |
+| 8. Arrange a page | Pass with issue | The sticker stops at the page edge, but its story and favourite star can still hang off it. |
+| 9. Calendar | Pass | "+2" now shows above today's ring, with a star for the favourite. |
+| 10. Interrupted | Pass | "Into Summer camp" shown up front; the draft and its story survived; the postcard found room around the hand-placed bear. |
+| 11. Tidy up | Pass | Delete from a thing's page: one tap plus a confirmation. |
+| 12. Larger text, poor photo | Pass with issue | The small-photo warning shows. At 130% the thing page's top label almost touches the delete button. |
+
+### Left to fix
+
+1. **Notes run off the screen.** A story is centred under its sticker and is wider than the space left of a thing in the left column; it's also not kept on the page while dragging. Keep the whole footprint (sticker, tag and note) inside the page, both when laying out and when dragging.
+2. **Doodles land on things.** Page doodles are placed without looking at the stamp, tags or stickers, so a star can sit on a tag. Place doodles only in empty space.
+3. **Count wording.** "Snip out all 2" should be "Snip out both"; "Swipe the row for more" should only show when the row actually scrolls.
+4. **Tight top label** on a thing's page at large text sizes.
+5. **One page dot** shows under a single book; hide the dots when there's only one.
+6. **Empty space on pages.** Things sit in the top part of each grid cell, which leaves a tall empty band at the bottom of the page.
+
+### Fixed after the second run
+
+| Finding | What changed |
+| --- | --- |
+| Notes off the screen | Tags and notes are at most 150 units wide, so two fit side by side, and the columns are spaced for them. Anything that would still reach the edge is nudged in, including things arranged by hand earlier. Dragging keeps the sticker, its star, tag and note on the page. |
+| Doodles on things | Doodles are placed last, only where nothing else is: off the title, the stamp, every thing and its labels, and each other. |
+| Count wording | "Snip out both" for two. "Swipe the row for more" only shows when the row really scrolls. |
+| Tight top label | The label leaves more room for the corner buttons and shrinks to fit at large text sizes. |
+| One page dot | No dots under a single book. |
+| Empty band | Each thing is centred in its grid cell, so pages fill evenly. |
+
+The layout test now also checks that four long-named things with stories keep their tags and notes inside the page.
+
 ## Notes on the test setup
 
 - **Gboard on the emulator** treats mouse clicks as a pen and shows a handwriting strip instead of keys. Switch with ☰ → **Show on-screen keyboard**. Real phones aren't affected.
