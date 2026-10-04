@@ -263,8 +263,10 @@ class MainActivity : Activity(), ThingHost {
     }
     private fun topLabel(value: String) = label(value).apply {
         gravity=Gravity.CENTER; maxLines=1; ellipsize=TextUtils.TruncateAt.END
+        // Shrinks to fit between the corner buttons rather than crowding them at large text sizes.
+        setAutoSizeTextTypeUniformWithConfiguration(8,11,1,TypedValue.COMPLEX_UNIT_SP)
         if(onDark && page!="desk") setShadowLayer(dp(2f),0f,dp(1f),Color.argb(110,0,0,0))
-        frame.addView(this,FrameLayout.LayoutParams(-1,dp(48),Gravity.TOP).apply { topMargin=insetTop+dp(10); marginStart=dp(72); marginEnd=dp(if(page=="thing") 124 else 72) })
+        frame.addView(this,FrameLayout.LayoutParams(-1,dp(48),Gravity.TOP).apply { topMargin=insetTop+dp(10); marginStart=dp(76); marginEnd=dp(if(page=="thing") 134 else 76) })
     }
     /** Runs [action] once a button's little flourish has had a moment to show. */
     private fun after(ms: Long, action: () -> Unit) { if(moving) frame.postDelayed({ if(!isDestroyed) action() },ms) else action() }
@@ -493,6 +495,7 @@ class MainActivity : Activity(), ThingHost {
         val burst=BurstBadge(this,fonts.display)
         val dots=LinearLayout(this).apply { gravity=Gravity.CENTER; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         books.forEach { _ -> dots.addView(View(this),LinearLayout.LayoutParams(dp(12),dp(12)).apply { marginStart=dp(4); marginEnd=dp(4) }) }
+        if(books.size<2) dots.visibility=View.GONE // A single dot says nothing.
         val hint=text("",21f,fonts.hand,Color.WHITE,1f).apply { gravity=Gravity.CENTER }
         val start=text("start\nhere",23f,fonts.hand,Color.WHITE,.95f).apply { rotation=-5f; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         val arrow=ArrowView(this)
@@ -819,7 +822,7 @@ class MainActivity : Activity(), ThingHost {
         host.postDelayed(timeout,45000)
         stage.onSelection={ picked,byHand ->
             keep.isEnabled=picked.isNotEmpty()
-            keep.text=if(picked.size>1) "Snip out all ${picked.size}" else "Snip it out"
+            keep.text=when(picked.size) { 0,1 -> "Snip it out"; 2 -> "Snip out both"; else -> "Snip out all ${picked.size}" }
             status.text=when {
                 found<=1 -> ""
                 picked.isEmpty() -> "Nothing chosen yet. Tap the things you want."
@@ -893,7 +896,9 @@ class MainActivity : Activity(), ThingHost {
                     if(subjects.size>1) {
                         thumbs.forEachIndexed { i,thumb -> chips.addView(ChipButton(this,i+1,thumb).apply { setOnClickListener { stage.toggle(i) } },LinearLayout.LayoutParams(dp(72),dp(72))) }
                         chipRow.visibility=View.VISIBLE
-                        status.text=if(subjects.size>4) "${subjects.size} things found. Swipe the row for more." else "${subjects.size} things found."
+                        status.text="${subjects.size} things found."
+                        // Only mention swiping once we know the row is wider than the screen.
+                        chipRow.post { if(chips.width>chipRow.width && stage.picked.isEmpty()) status.text="${subjects.size} things found. Swipe the row for more." }
                     }
                     if(subjects.size==1) stage.select(0) // Nothing to choose between: go straight to snipping.
                 }
