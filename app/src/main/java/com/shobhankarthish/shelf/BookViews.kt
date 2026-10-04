@@ -131,35 +131,53 @@ object PageLayout {
         val b=boxOf(item.aspect,p.size)
         val wide=maxOf(b.x,tagWidth(item.title,Fonts.handFace),if(item.story.isBlank()) 0f else NOTE_WIDTH)
         val t=p.y-b.y/2
-        return RectF(p.x-wide/2-5f,t-6f,p.x+wide/2+5f,t+b.y+labelsHeight(item)+4f)
+        // A favourite's star sits on the sticker's top-right corner and pokes out past it.
+        val star=if(item.favourite) 14f else 0f
+        return RectF(p.x-wide/2-9f,t-6f-star,max(p.x+wide/2,p.x+b.x/2+star)+9f,t+b.y+labelsHeight(item)+4f)
     }
     /**
      * Where an unarranged thing goes. Pages are a 2×2 grid under the title and date stamp; each thing is sized to fit its
      * cell with its tag and note, so nothing overlaps. If something arranged by hand is in the way, it finds the nearest
      * free spot instead, a little smaller each time the page is too full.
      */
+    /** [p] moved just enough that everything the thing shows, its tag and note included, is on the page. */
+    fun onPage(item: Keepsake, p: Placement): Placement {
+        val f=footprint(item,p); var dx=0f; var dy=0f
+        if(f.left<MARGIN) dx=MARGIN-f.left else if(f.right>360f-MARGIN) dx=360f-MARGIN-f.right
+        if(f.bottom>HEIGHT) dy=HEIGHT-f.bottom
+        return if(dx==0f && dy==0f) p else p.copy(x=p.x+dx,y=p.y+dy)
+    }
+    /** How close to the page's side edges anything may come, in page units. */
+    private const val MARGIN=10f
     fun fit(item: Keepsake, slot: Int, top: Float, taken: List<RectF>, firstPage: Boolean=true): Placement {
         val r=Rng(seedOf(item.id))
         val areaTop=top+(if(firstPage) 32f else 20f)
         val cellH=(HEIGHT-areaTop)/2f; val col=slot%2; val row=min(1,slot/2)
-        val roomH=max(60f,cellH-labelsHeight(item)-20f); val roomW=150f
+        val roomH=max(40f,cellH-labelsHeight(item)-24f); val roomW=150f
         val a=item.aspect
         var size=min(170f,if(a>=1f) min(roomW,roomH*a) else min(roomW/a,roomH))
         val box=boxOf(a,size)
-        // A little off-centre, always toward the middle of the page, so neighbours never touch.
-        val cell=Placement(90f+col*180f+(if(col==0) -1f else 1f)*r.between(0f,6f),areaTop+row*cellH+10f+box.y/2+r.between(0f,6f),r.between(-6f,6f),size,1)
+        // Centred in its cell, a little off toward the middle of the page so neighbours never touch,
+        // then nudged in so its tag and note stay on the page too.
+        val down=max(12f,(cellH-box.y-labelsHeight(item))/2)
+        // Column centres leave room for two of the widest tags or notes, with a gap between them.
+        var cell=Placement(if(col==0) 94f else 266f,areaTop+row*cellH+down+box.y/2,r.between(-5f,5f),size,1)
+        cell=onPage(item,cell)
         if(taken.none { RectF.intersects(it,footprint(item,cell)) }) return cell
+        val spots=ArrayList<PointF>()
+        var y=top+20f; while(y<=HEIGHT-20f) { var x=30f; while(x<=330f) { spots+=PointF(x,y); x+=10f }; y+=10f }
+        spots.sortBy { hypot(it.x-cell.x,(it.y-cell.y)*1.4f) }
+        fun fits(f: RectF)=f.left>=MARGIN && f.right<=360f-MARGIN && f.top>=top-6f && f.bottom<=HEIGHT+4f
         repeat(6) {
-            val spots=ArrayList<PointF>()
-            var y=top+20f; while(y<=HEIGHT-20f) { var x=30f; while(x<=330f) { spots+=PointF(x,y); x+=10f }; y+=10f }
-            spots.sortBy { hypot(it.x-cell.x,(it.y-cell.y)*1.4f) }
             for(spot in spots) {
                 val p=cell.copy(x=spot.x,y=spot.y,size=size); val f=footprint(item,p)
-                if(f.left>=-4f && f.right<=364f && f.top>=top-6f && f.bottom<=HEIGHT+4f && taken.none { RectF.intersects(it,f) }) return p
+                if(fits(f) && taken.none { RectF.intersects(it,f) }) return p
             }
             size*=.88f
         }
-        return cell.copy(size=size)
+        // A really full page: the shrunken thing goes where it covers the least of anything else.
+        val overlap={ f: RectF -> taken.sumOf { o -> val i=RectF(); if(i.setIntersect(f,o)) (i.width()*i.height()).toDouble() else 0.0 } }
+        return spots.map { cell.copy(x=it.x,y=it.y,size=size) }.filter { fits(footprint(item,it)) }.minByOrNull { overlap(footprint(item,it)) } ?: cell.copy(size=size)
     }
     fun title(book: Book)=CutLetters(book.name,24f,seedOf(book.id)+1,250f)
 }
@@ -183,6 +201,8 @@ interface ThingHost {
 class ThingView(context: Context, val item: Keepsake, var place: Placement, private val k: Float, private val hand: Typeface, private val host: ThingHost) : View(context) {
     val w: Float; val h: Float
     val padLeft: Float; val padTop: Float; val padRight: Float; val padBottom: Float
+    /** Half the width of the sticker or its labels, whichever is wider, in page units. */
+    private val halfWide: Float
     private val d=resources.displayMetrics.density
     private var bitmap: Bitmap?=null
     private val right=place.x>180f
@@ -206,7 +226,7 @@ class ThingView(context: Context, val item: Keepsake, var place: Placement, priv
         val box=boxOf(item.aspect,place.size); w=box.x; h=box.y
         note=snippet(item.story).takeIf { it.isNotEmpty() }?.let { PenNote(it,hand) }
         // The tag and note hang centred under the sticker, so a thing is never wider than its labels or its picture.
-        val tag=tagWidth(item.title,hand); val wide=maxOf(w,tag,note?.width ?: 0f)
+        val tag=tagWidth(item.title,hand); val wide=maxOf(w+12f,tag,note?.width ?: 0f); halfWide=wide/2
         padTop=HANDLE
         padLeft=max(HANDLE,(wide-w)/2+4f); padRight=max(HANDLE,(wide-w)/2+4f)
         padBottom=maxOf(HANDLE,44f+(note?.height?.plus(12f) ?: 0f))
@@ -278,9 +298,9 @@ class ThingView(context: Context, val item: Keepsake, var place: Placement, priv
                     val a=(startAngle+Math.toDegrees(angleTo(e)-aim)).toFloat()
                     place=place.copy(angle=((a+540f)%360f-180f).coerceIn(-45f,45f)); rotation=place.angle; moved()
                 } else {
-                    // The whole sticker stays on the page.
-                    val hx=min(w/2+2f,178f); val hy=min(h/2+2f,PageLayout.HEIGHT/2)
-                    place=place.copy(x=(startX+(e.rawX-downRawX)/k).coerceIn(hx,360f-hx),y=(startY+(e.rawY-downRawY)/k).coerceIn(hy,PageLayout.HEIGHT-hy))
+                    // Everything it shows stays on the page: the sticker, its star, and the tag and note under it.
+                    val hx=min(max(halfWide,w/2+(if(item.favourite) 14f else 0f))+10f,178f); val up=h/2+16f; val below=h/2+padBottom-HANDLE+20f
+                    place=place.copy(x=(startX+(e.rawX-downRawX)/k).coerceIn(hx,360f-hx),y=(startY+(e.rawY-downRawY)/k).coerceIn(up,max(up,PageLayout.HEIGHT-below)))
                     translationX=(place.x-startX)*k; translationY=(place.y-startY)*k; moved()
                 }
                 return true
@@ -369,23 +389,33 @@ class Leaf(context: Context, val book: Book, val index: Int, private val pages: 
     private val ringPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; color=Ink.ACCENT; strokeWidth=3f }
     init {
         setWillNotDraw(false); clipChildren=false
-        val r=Rng(seedOf(book.id)+index*31)
-        val spots=mutableListOf(floatArrayOf(332f,30f),floatArrayOf(22f,236f),floatArrayOf(340f,286f),floatArrayOf(24f,452f),floatArrayOf(334f,500f),floatArrayOf(196f,572f),floatArrayOf(56f,574f),floatArrayOf(300f,580f))
-        val inks=intArrayOf(Ink.SUN,Ink.BLUSH,Ink.SKY,Ink.MINT,Ink.ACCENT)
-        doodles=List(4) { i ->
-            val s=spots.removeAt((r.next()*spots.size).toInt().coerceAtMost(spots.size-1))
-            Scribble(Mark.entries[(r.next()*3).toInt().coerceAtMost(2)],s[0],s[1],r.between(18f,30f),inks[(i+index)%inks.size],r.between(-20f,20f))
-        }
         // Things someone arranged stay put; the rest find room around them, the title and the date stamp.
         val taken=ArrayList<RectF>()
+        title?.let { taken+=RectF(14f,-6f,20f+min(it.width,300f)+8f,it.heightIn(300f)+6f) }
         if(stamp!=null) taken+=RectF(330f-stampWidth(stamp),if(index==0) top-8f else -4f,364f,(if(index==0) top-2f else 0f)+STAMP_HEIGHT+10f)
-        items.forEach { item -> item.place?.let { taken+=PageLayout.footprint(item,it) } }
+        // Arranged things keep their spot, but come in from the edge if their tag or note would hang off the page.
+        val kept=items.associate { item -> item.id to item.place?.let { PageLayout.onPage(item,it) } }
+        items.forEach { item -> kept[item.id]?.let { taken+=PageLayout.footprint(item,it) } }
         items.forEachIndexed { slot,item ->
-            val place=item.place ?: PageLayout.fit(item,slot,top,taken,index==0).also { taken+=PageLayout.footprint(item,it) }
+            val place=kept[item.id] ?: PageLayout.fit(item,slot,top,taken,index==0).also { taken+=PageLayout.footprint(item,it) }
             val t=ThingView(context,item,place,fit.k,hand,host)
             things+=t; addView(t,paramsFor(t))
             load(item,t.loadSize) { t.show(it) }
         }
+        // Doodles go only where nothing else is: off the title, the stamp, the things and their labels, and each other.
+        val r=Rng(seedOf(book.id)+index*31)
+        val inks=intArrayOf(Ink.SUN,Ink.BLUSH,Ink.SKY,Ink.MINT,Ink.ACCENT)
+        val placed=ArrayList<Scribble>()
+        var tries=0
+        while(placed.size<4 && tries<200) {
+            tries++
+            val size=r.between(18f,30f); val x=r.between(18f,342f); val y=r.between(top+10f,PageLayout.HEIGHT-14f)
+            val spot=RectF(x-size/2-6f,y-size/2-6f,x+size/2+6f,y+size/2+6f)
+            if(taken.any { RectF.intersects(it,spot) }) continue
+            taken+=spot
+            placed+=Scribble(Mark.entries[(r.next()*3).toInt().coerceAtMost(2)],x,y,size,inks[(placed.size+index)%inks.size],r.between(-20f,20f))
+        }
+        doodles=placed
         things.sortedBy { it.place.z }.forEach { it.bringToFront() }
         addView(labels,LayoutParams(-1,-1)); addView(spineView,LayoutParams(-1,-1)); addView(shadeView,LayoutParams(-1,-1))
     }

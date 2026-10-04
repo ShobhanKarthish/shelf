@@ -88,7 +88,8 @@ class ShelfTest : AndroidTestCase() {
             val item=Keepsake("thing-$slot","A rather long name for slot $slot","He sat on the top shelf of the study for years.","book",false,0L,aspect)
             val p=PageLayout.fit(item,slot,top,taken); val f=PageLayout.footprint(item,p)
             assertTrue("Thing $slot overlaps another",taken.none { android.graphics.RectF.intersects(it,f) })
-            assertTrue("Thing $slot leaves the page",f.left>=-4f && f.right<=364f && f.top>=top-6f && f.bottom<=PageLayout.HEIGHT+4f)
+            // Tags and notes included: nothing may run off the sides of the page.
+            assertTrue("Thing $slot leaves the page: $f",f.left>=9.9f && f.right<=350.1f && f.top>=top-6f && f.bottom<=PageLayout.HEIGHT+4f)
             taken+=f
         }
     }

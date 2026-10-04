@@ -154,8 +154,8 @@ fun drawStamp(c: Canvas, text: String, left: Float, top: Float, angle: Float, pu
 /** The string from a thing to its tag. */
 fun drawString(c: Canvas, path: Path) { strokePaint.color=Pen.STRING; strokePaint.strokeWidth=1.4f; strokePaint.shader=null; strokePaint.pathEffect=null; c.drawPath(path,strokePaint) }
 
-/** The longest a small tag gets; longer names are shortened to fit. */
-const val TAG_MAX=170f
+/** The longest a small tag gets, so two fit side by side on a page; longer names are shortened to fit. */
+const val TAG_MAX=150f
 /** How wide a small tag for [name] is, in page units. */
 fun tagWidth(name: String, hand: Typeface): Float {
     textPaint.reset(); textPaint.isAntiAlias=true; textPaint.letterSpacing=0f; textPaint.typeface=hand; textPaint.textSize=18f
@@ -187,8 +187,8 @@ fun drawTag(c: Canvas, name: String, anchorX: Float, top: Float, angle: Float, h
     c.restore()
 }
 
-/** How wide a note under a thing is, in page units. */
-const val NOTE_WIDTH=170f
+/** How wide a note under a thing is, in page units: two fit side by side on a page. */
+const val NOTE_WIDTH=150f
 /** A few words in blue pen, wrapped to [width] and centred, at most two lines. */
 class PenNote(text: String, hand: Typeface, val width: Float=NOTE_WIDTH, size: Float=18f) {
     private val paint=TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface=hand; textSize=size; color=Pen.BLUE }
