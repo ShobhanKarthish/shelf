@@ -56,16 +56,18 @@ class DayCell(context: Context, val day: Int, val items: List<Keepsake>, private
         val label=day.toString(); val tw=number.measureText(label)
         fill.color=fullness(items.size); c.drawRoundRect(body.left+3*d,body.top+2.5f*d,body.left+7*d+tw,body.top+3.5f*d+number.textSize,4*d,4*d,fill)
         c.drawText(label,body.left+5*d,body.top+2*d+number.textSize,number)
+        // Today's ring goes under the +N, so the count is never hidden.
+        if(today && drawn>0f) {
+            ring.strokeWidth=3*d
+            val path=Path(); val m=PathMeasure(markerRing(body),false); m.getSegment(0f,m.length*drawn,path,true)
+            c.drawPath(path,ring)
+        }
+        if(items.any { it.favourite }) drawMark(c,Mark.STAR,body.right-7*d,body.bottom-7*d,13*d,Ink.ACCENT,12f)
         if(items.size>4) {
             val more="+${items.size-3}"; number.textSize=10*d; val w=number.measureText(more)+10*d
             val tag=RectF(body.right-w+4*d,-6*d,body.right+6*d,9*d)
             drawPop(c,tag,7.5f*d,Ink.ACCENT,2*d,0f)
             number.color=Color.WHITE; c.drawText(more,tag.left+5*d,tag.bottom-4.5f*d,number); number.color=Ink.INK
-        }
-        if(today && drawn>0f) {
-            ring.strokeWidth=3*d
-            val path=Path(); val m=PathMeasure(markerRing(body),false); m.getSegment(0f,m.length*drawn,path,true)
-            c.drawPath(path,ring)
         }
     }
     /** A loop of red marker around the day, drawn by hand: it overshoots where it started. */
@@ -180,7 +182,7 @@ class DayThing(context: Context, val item: Keepsake, private val hand: Typeface,
     private var bitmap: Bitmap?=null
     init {
         load(item,(130*d).roundToInt()) { bitmap=it; invalidate() }
-        contentDescription=item.title; isClickable=true; isFocusable=true
+        contentDescription=if(item.favourite) "${item.title}, a favourite" else item.title; isClickable=true; isFocusable=true
     }
     override fun onDraw(c: Canvas) {
         c.save(); c.scale(d,d)
@@ -189,6 +191,7 @@ class DayThing(context: Context, val item: Keepsake, private val hand: Typeface,
         bitmap?.let { b ->
             c.save(); c.rotate(angle,cx,cy)
             drawCutout(c,b,RectF(cx-box.x/2,cy-box.y/2,cx+box.x/2,cy+box.y/2),1.6f,3f)
+            if(item.favourite) drawMark(c,Mark.STAR,cx+box.x/2-6f,cy-box.y/2+6f,24f,Ink.ACCENT,14f)
             if(item.framed) { c.translate(cx-box.x/2,cy-box.y/2); drawFastener(c,box.x,seedOf(item.id)) }
             c.restore()
         }
