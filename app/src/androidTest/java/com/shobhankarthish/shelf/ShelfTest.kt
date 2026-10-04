@@ -81,6 +81,33 @@ class ShelfTest : AndroidTestCase() {
         }
     }
 
+    /** Four things with long names and stories, left to the automatic layout, never cover each other's tags or notes. */
+    fun testAutoLayoutKeepsThingsApart() {
+        val top=70f; val taken=ArrayList<android.graphics.RectF>()
+        listOf(1.2f,4.5f,.7f,1.6f).forEachIndexed { slot,aspect ->
+            val item=Keepsake("thing-$slot","A rather long name for slot $slot","He sat on the top shelf of the study for years.","book",false,0L,aspect)
+            val p=PageLayout.fit(item,slot,top,taken); val f=PageLayout.footprint(item,p)
+            assertTrue("Thing $slot overlaps another",taken.none { android.graphics.RectF.intersects(it,f) })
+            assertTrue("Thing $slot leaves the page",f.left>=-4f && f.right<=364f && f.top>=top-6f && f.bottom<=PageLayout.HEIGHT+4f)
+            taken+=f
+        }
+    }
+
+    /** Moving a thing into a book puts it at the end, so the things already there keep their places. */
+    fun testMovedThingJoinsTheEnd() {
+        val name="test-order.db"; context.deleteDatabase(name)
+        val db=ShelfStore(context,name)
+        val a=db.addBook("A",Paper.GRID); val b=db.addBook("B",Paper.DOTS)
+        val img=Bitmap.createBitmap(10,10,Bitmap.Config.ARGB_8888)
+        val first=db.save(img,"First","",a.id,true); Thread.sleep(5)
+        val moved=db.save(img,"Moved","",b.id,true); Thread.sleep(5)
+        val last=db.save(img,"Last","",a.id,true); Thread.sleep(5)
+        db.update(moved.id,"Moved","",a.id); db.setFavourite(moved.id,true)
+        assertEquals(listOf(first.id,last.id,moved.id),db.inBook(a.id).map { it.id })
+        assertTrue(db.find(moved.id)!!.favourite)
+        db.close(); context.deleteDatabase(name)
+    }
+
     fun testStickerOutlineSurroundsObject() {
         val b=Bitmap.createBitmap(80,60,Bitmap.Config.ARGB_8888)
         for(x in 20..50) for(y in 15..40) b.setPixel(x,y,Color.RED)
