@@ -303,13 +303,21 @@ class MainActivity : Activity(), ThingHost {
         if(cancel!=null) scrim.setOnClickListener { close() }
         closeNote=close
         if(moving) { scrim.alpha=0f; scrim.animate().alpha(1f).setDuration(150).start(); card.scaleX=.94f; card.scaleY=.94f; card.animate().scaleX(1f).scaleY(1f).setDuration(180).start() }
-        field?.requestFocus()
+        field?.let { f -> f.requestFocus(); f.post { keys(f) } }
         scrim.announceForAccessibility(heading)
     }
+    /** Opens the keyboard for [field]. Focus alone doesn't, and a dialog asking for a name is no use without it. */
+    private fun keys(field: EditText) {
+        if(!field.isAttachedToWindow || !field.hasFocus()) return
+        if(Build.VERSION.SDK_INT>=30) field.windowInsetsController?.show(WindowInsets.Type.ime())
+        else (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(field,0)
+    }
+    /** A field that always types with keys. On a tablet or emulator, a click can look like a pen, and then the keyboard offers handwriting instead. */
+    private fun EditText.typed()=apply { if(Build.VERSION.SDK_INT>=33) isAutoHandwritingEnabled=false }
     private fun error(message: String) = ask(message,null,"OK")
     /** Asks for a short name, such as a book's. */
     private fun askName(heading: String, message: String?, initial: String, confirm: String, onName: (String) -> Unit) {
-        val field=EditText(this).apply {
+        val field=EditText(this).typed().apply {
             setText(initial); setSelection(initial.length); hint="Trips, Home, Grandma’s…"; typeface=fonts.sans; setTextSize(TypedValue.COMPLEX_UNIT_SP,16f); setTextColor(Ink.INK); setHintTextColor(Ink.INK_3)
             isSingleLine=true; filters=arrayOf(InputFilter.LengthFilter(40)); inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS; imeOptions=EditorInfo.IME_ACTION_DONE
             background=pill(Color.WHITE,dp(12f),Ink.INK,dp(2f)); setPadding(dp(14),0,dp(14),0); contentDescription=heading
@@ -890,7 +898,7 @@ class MainActivity : Activity(), ThingHost {
         if(item!=null) loader(item,dp(340)) { art.show(it,true) } else artOf(if(framed) original else cutout,framed,dp(340),art)
         body.addView(StringView(this),LinearLayout.LayoutParams(-1,dp(26)))
         val tag=TagBackground(density)
-        val name=EditText(this).apply {
+        val name=EditText(this).typed().apply {
             id=View.generateViewId(); setText(draftTitle); hint="name it…"; contentDescription="Name"; typeface=fonts.hand; setTextSize(TypedValue.COMPLEX_UNIT_SP,26f); setTextColor(Ink.INK); setHintTextColor(Ink.alpha(Ink.INK,.42f))
             background=tag; setPadding(dp(32),0,dp(19),dp(3)); isSingleLine=true; filters=arrayOf(InputFilter.LengthFilter(120)); gravity=Gravity.CENTER_VERTICAL
             inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES; imeOptions=EditorInfo.IME_ACTION_NEXT; rotation=-1.5f
@@ -901,7 +909,7 @@ class MainActivity : Activity(), ThingHost {
         add(nameError,top=4)
         name.onEdit { nameError.visibility=View.GONE }
         val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=PopDrawable(Color.WHITE,dp(16f),dp(2.5f),dp(4f)); setPadding(dp(16),dp(14),dp(20),dp(12)) }
-        val story=EditText(this).apply {
+        val story=EditText(this).typed().apply {
             id=View.generateViewId(); setText(draftStory); hint="A line or two, if you like."; typeface=fonts.sans; setTextSize(TypedValue.COMPLEX_UNIT_SP,15.5f); setTextColor(Ink.INK); setHintTextColor(Ink.INK_3)
             background=null; setPadding(0,dp(6),0,dp(6)); minLines=3; gravity=Gravity.TOP or Gravity.START; setLineSpacing(0f,1.35f); filters=arrayOf(InputFilter.LengthFilter(4000))
             inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
