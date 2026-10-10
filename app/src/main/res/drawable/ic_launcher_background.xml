@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ink, so the kraft tag and its paper-white edge stand out on any wallpaper. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#1C1E28" />
-</shape>
+<!-- Sunshine: the yellow and its rays from a thing's own page. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M0,0 L108,0 L108,108 L0,108 Z" android:fillColor="#FFCB3D" />
+    <path android:pathData="M54,54 L144,54 L141.74,74.03 Z M54,54 L131.94,99 L119.97,115.22 Z M54,54 L99,131.94 L80.53,140 Z M54,54 L54,144 L33.97,141.74 Z M54,54 L9,131.94 L-7.22,119.97 Z M54,54 L-23.94,99 L-32,80.53 Z M54,54 L-36,54 L-33.74,33.97 Z M54,54 L-23.94,9 L-11.97,-7.22 Z M54,54 L9,-23.94 L27.47,-32 Z M54,54 L54,-36 L74.03,-33.74 Z M54,54 L99,-23.94 L115.22,-11.97 Z M54,54 L131.94,9 L140,27.47 Z" android:fillColor="#FFE08A" />
+</vector>
