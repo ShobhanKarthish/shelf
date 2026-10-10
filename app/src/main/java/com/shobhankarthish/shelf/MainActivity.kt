@@ -233,8 +233,8 @@ class MainActivity : Activity(), ThingHost {
     }
     private fun primary(label: String, action: () -> Unit) = PrimaryButton(this,label).apply { setOnClickListener { action() } }
     private fun quiet(label: String, color: Int=if(onDark) Color.WHITE else Ink.INK, action: () -> Unit) = QuietButton(this,label,color=color).apply { setOnClickListener { action() } }
-    /** Which step of adding you're on, and the book the thing is going into, so that's never a surprise. */
-    private fun step(n: Int)="Into ${bookFor(draftBook).name} · step $n of 2"+(if(n==2 && batch>1) " · ${batchAt+1} of $batch" else "")
+    /** Which step of adding you're on, and the book the thing is going into, so that's never a surprise. The title counts a batch. */
+    private fun step(n: Int)="Into ${bookFor(draftBook).name} · step $n of 2"
     /** Close on the left; which step you're on, in the middle. */
     private fun topBar(step: String) {
         val bar=FrameLayout(this)
