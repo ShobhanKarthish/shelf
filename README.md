@@ -11,6 +11,7 @@
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white">
   <img alt="On-device processing" src="https://img.shields.io/badge/processing-on--device-1C1E28">
   <img alt="No account needed" src="https://img.shields.io/badge/account-not%20needed-DE5230">
+  <img alt="MIT License" src="https://img.shields.io/badge/license-MIT-FFCB3D">
 </p>
 
 <p align="center">
@@ -163,6 +164,10 @@ Shelf is in early development. Camera capture and export are not available yet, 
 ## Contributing
 
 Bug reports and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
+
+## License
+
+Shelf is released under the [MIT License](LICENSE).
 
 ## Credits
 

@@ -12,3 +12,7 @@ local.properties
 *.p12
 *signing.properties
 keystore.properties
+
+# Local prototypes and editor settings
+demos/
+.claude/
