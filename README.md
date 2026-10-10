@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon.svg" width="112" height="112" alt="Shelf app icon: a kraft name tag on its string">
+  <img src="docs/icon.svg" width="112" height="112" alt="Shelf app icon: a smiling red star sticker on sunshine">
 </p>
 
 <h1 align="center">Shelf</h1>
@@ -23,9 +23,11 @@
 
 Shelf is a native Android app for keeping the small things that matter: a ticket, a shell, a key. Photograph an object and Shelf cuts it out on your phone, like a sticker. Give it a name and a story if you like, and stick it into a book.
 
-| Welcome | Your books | A page | Choose | Name it |
-| :---: | :---: | :---: | :---: | :---: |
-| <img src="docs/screenshots/welcome.png" width="160" alt="Welcome screen with hand-drawn keepsakes"> | <img src="docs/screenshots/books.png" width="160" alt="A book on the desk, its cover made from the shells inside"> | <img src="docs/screenshots/page.png" width="160" alt="A page of shells with kraft name tags, a taped print and a date stamp"> | <img src="docs/screenshots/choose.png" width="160" alt="A taped photo with a blue cut line around a shell"> | <img src="docs/screenshots/name.png" width="160" alt="The shell sticker tied to a kraft tag to write its name on"> |
+| Welcome | Your books | A page | The calendar |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/screenshots/welcome.png" width="180" alt="Welcome screen with hand-drawn keepsakes on gingham"> | <img src="docs/screenshots/books.png" width="180" alt="A gingham book on the desk, its cover made from the shells inside"> | <img src="docs/screenshots/page.png" width="180" alt="A page of shell stickers with kraft name tags, notes in pen and a date stamp"> | <img src="docs/screenshots/calendar.png" width="180" alt="A month of day cells, with today's shells piled in a ringed cell"> |
+| **A thing's page** | **Choose** | **Name it** | |
+| <img src="docs/screenshots/thing.png" width="180" alt="A shell sticker in its own sunshine, beside the taped photo it was cut from"> | <img src="docs/screenshots/choose.png" width="180" alt="A taped photo with two of three shells picked out in solid blue cut lines"> | <img src="docs/screenshots/name.png" width="180" alt="The shell sticker tied to a kraft tag with its name and story"> | |
 
 ## Features
 
